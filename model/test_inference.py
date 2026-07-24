@@ -4,16 +4,19 @@ import requests
 def test_api():
     url = "http://localhost:8000/detect"
     
-    # We will test using one of the ESC-50 real audio files we already downloaded
-    test_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "data", "processed", "siren", "siren_esc50_000.wav"))
+    # Find first siren or glass breaking file dynamically
+    import glob
+    processed_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "data", "processed"))
     
-    if not os.path.exists(test_file):
-        print(f"Test file not found: {test_file}")
-        # Try a different one
-        test_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "data", "processed", "glass_breaking", "glass_breaking_esc50_000.wav"))
-        if not os.path.exists(test_file):
-            print("No test files available yet.")
-            return
+    test_files = glob.glob(os.path.join(processed_dir, "siren", "*.wav"))
+    if not test_files:
+        test_files = glob.glob(os.path.join(processed_dir, "glass_breaking", "*.wav"))
+        
+    if not test_files:
+        print("No processed test files available yet.")
+        return
+        
+    test_file = test_files[0]
             
     print(f"Testing API with real audio file: {test_file}")
     
