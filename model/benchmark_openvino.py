@@ -54,8 +54,8 @@ def benchmark():
     input_layer = compiled_model.input(0)
     output_layer = compiled_model.output(0)
     
-    # Dummy input representing 5-second spectrogram (1 batch, 1 channel, 64 mels, 156 frames)
-    dummy_input = np.random.randn(1, 1, 64, 156).astype(np.float32)
+    # Dummy input representing 2-second spectrogram (1 batch, 1 channel, 192 mels, 63 frames)
+    dummy_input = np.random.randn(1, 1, 192, 63).astype(np.float32)
     
     # Warm-up runs
     print("\nPerforming warm-up runs...")
