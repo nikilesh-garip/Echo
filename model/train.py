@@ -23,7 +23,7 @@ def load_metadata(metadata_path):
                 data_list.append((file_path, label))
     return data_list
 
-def train_model():
+def train_model(lr=0.001, batch_size=16, epochs=15):
     print("Starting Echo Model Training...")
     
     metadata_path = "data/processed/metadata.csv"
@@ -46,7 +46,7 @@ def train_model():
     
     # Data loaders
     train_loader, val_loader, test_loader = get_dataloaders(
-        train_data, val_data, test_data, batch_size=16
+        train_data, val_data, test_data, batch_size=batch_size
     )
     
     # Initialize Model, Loss, Optimizer
@@ -55,9 +55,8 @@ def train_model():
     
     model = EchoCRNN(num_classes=8).to(device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
-    
-    epochs = 15
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+
     best_val_loss = float("inf")
     
     # Metric history log
@@ -123,4 +122,11 @@ def train_model():
     print("Training Complete! Saved best_model.pth and training_results.pth")
 
 if __name__ == "__main__":
-    train_model()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
+    parser.add_argument("--batch-size", type=int, default=16, help="Batch size")
+    parser.add_argument("--epochs", type=int, default=15, help="Number of epochs")
+    args = parser.parse_args()
+    
+    train_model(lr=args.lr, batch_size=args.batch_size, epochs=args.epochs)

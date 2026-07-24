@@ -50,3 +50,11 @@ build/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Cloned repositories for reference
+cloned_repos/
+
+# Training run traces
+reports/*.json
+
+
