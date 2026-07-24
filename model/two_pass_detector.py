@@ -83,7 +83,13 @@ class TwoPassDetector:
                 max_prob = prob
                 candidate_idx = idx
                 
+        # Print probabilities for debugging
+        print("\n--- Pass 1 Detection Probabilities ---")
+        for i in range(8):
+            print(f"  {self.idx_to_class[i]}: {probs[i].item():.4f}")
+            
         candidate_class = self.idx_to_class[candidate_idx]
+        print(f"  Selected candidate: {candidate_class if max_prob >= 0.50 else 'normal'} (max_hazard_prob={max_prob:.4f})")
         
         # If candidate exceeds 0.50, return it
         if max_prob >= 0.50:

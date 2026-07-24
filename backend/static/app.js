@@ -222,10 +222,37 @@ async function runPipelinePass1() {
             const data = await res.json();
             
             if (data.has_candidate) {
-                // Trigger Pass 2: Verify candidate over a 5s window
-                micStatusIndicator.className = "signal-dot orange";
-                micStatusText.innerText = "Verifying...";
-                runPipelinePass2(data.candidate, data.confidence);
+                if (data.immediate_verification) {
+                    updateUIForClass(
+                        data.candidate,
+                        data.primary_confidence,
+                        data.verification_confidence,
+                        data.risk_score,
+                        data.risk_level
+                    );
+                    
+                    if (data.verified && data.risk_score > 30) {
+                        // Log verified hazard to backend immediately
+                        await fetch("/events", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                user_id: userId,
+                                class_name: data.candidate,
+                                primary_conf: data.primary_confidence,
+                                verification_conf: data.verification_confidence,
+                                risk_score: data.risk_score,
+                                risk_level: data.risk_level
+                            })
+                        });
+                        triggerAlertModal(data);
+                    }
+                } else {
+                    // Trigger Pass 2: Verify candidate over a 5s window
+                    micStatusIndicator.className = "signal-dot orange";
+                    micStatusText.innerText = "Verifying...";
+                    runPipelinePass2(data.candidate, data.confidence);
+                }
             } else {
                 updateUIForClass("normal", data.confidence, 0.0, 0, "NORMAL");
             }

@@ -125,11 +125,35 @@ async def detect_audio(
         if duration <= 3.0:
             # Run Pass 1
             has_candidate, candidate, confidence = detector.run_pass_1(audio_data, sr)
+            
+            # Immediate verification for transient events (gunshot, explosion, glass_breaking)
+            if has_candidate and candidate in ["gunshot", "explosion", "glass_breaking"]:
+                risk_score, risk_level = scorer.calculate_risk(
+                    primary_conf=confidence,
+                    verification_conf=confidence,
+                    media_playback=media_playback,
+                    sudden_motion=sudden_motion,
+                    current_class=candidate
+                )
+                return {
+                    "pass": 1,
+                    "has_candidate": True,
+                    "candidate": candidate,
+                    "confidence": confidence,
+                    "immediate_verification": True,
+                    "verified": True,
+                    "primary_confidence": confidence,
+                    "verification_confidence": confidence,
+                    "risk_score": risk_score,
+                    "risk_level": risk_level
+                }
+                
             return {
                 "pass": 1,
                 "has_candidate": has_candidate,
                 "candidate": candidate,
-                "confidence": confidence
+                "confidence": confidence,
+                "immediate_verification": False
             }
         else:
             # Run Pass 2 (Requires candidate parameter to be verified)
