@@ -1,27 +1,27 @@
 Echo CRNN Model Evaluation Report
 =================================
 
-Accuracy: 0.9375
-Precision: 0.9552
-Recall: 0.8937
-F1 Score: 0.9195
+Accuracy: 0.9659
+Precision: 0.9525
+Recall: 0.9252
+F1 Score: 0.9358
 
 Class-wise Metrics:
-Normal: FPR=0.0339, FNR=0.0517
-Gunshot: FPR=0.0169, FNR=0.0345
+Normal: FPR=0.0000, FNR=0.0172
+Gunshot: FPR=0.0085, FNR=0.0172
 Explosion: FPR=0.0000, FNR=0.0000
 Scream: FPR=0.0000, FNR=0.0000
-Glass Breaking: FPR=0.0000, FNR=0.2500
+Glass Breaking: FPR=0.0060, FNR=0.1250
 Fire Alarm: FPR=0.0000, FNR=0.0000
-Siren: FPR=0.0362, FNR=0.0526
-Shouting: FPR=0.0000, FNR=0.1429
+Siren: FPR=0.0290, FNR=0.0000
+Shouting: FPR=0.0000, FNR=0.2143
 
 Confusion Matrix:
-[[55  0  0  0  0  0  3  0]
- [ 1 56  0  0  0  0  1  0]
+[[57  0  0  0  0  0  1  0]
+ [ 0 57  0  0  1  0  0  0]
  [ 0  0  0  0  0  0  0  0]
  [ 0  0  0  0  0  0  0  0]
- [ 0  2  0  0  6  0  0  0]
+ [ 0  1  0  0  7  0  0  0]
  [ 0  0  0  0  0  0  0  0]
- [ 2  0  0  0  0  0 36  0]
- [ 1  0  0  0  0  0  1 12]]
+ [ 0  0  0  0  0  0 38  0]
+ [ 0  0  0  0  0  0  3 11]]

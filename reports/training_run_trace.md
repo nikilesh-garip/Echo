@@ -1,6 +1,6 @@
 # ECHO Model Training & Validation Run Trace
 
-*Trace started at: 2026-07-24 06:20:26 UTC*
+*Trace started at: 2026-07-24 07:27:51 UTC*
 
 
 ## 🏁 PHASE: INITIAL SETUP
@@ -13,19 +13,30 @@ Executing prepare_dataset.py to map raw files to the 5 active classes...
 
 ### 📋 Task: Model Training (Iteration 1)
 Training CRNN model for 15 epochs with LR=0.001...
-* **[SUCCESS]** Training completed in 83.9s.
+* **[SUCCESS]** Training completed in 142.9s.
 
 ### 📋 Task: Model Evaluation (Iteration 1)
 Running evaluate.py on the test split...
-* **[EVALUATION_METRICS]** Test Accuracy: 93.75%, Test F1 Score: 0.9195
+* **[EVALUATION_METRICS]** Test Accuracy: 93.18%, Test F1 Score: 0.8677
+* **[QUALITY_GATE_FAILED]** Iteration F1 score 0.8677 did not meet target 0.9.
+
+## 🏁 PHASE: VALIDATION LOOP ITERATION 2 (LEARNING RATE = 0.0005)
+
+### 📋 Task: Model Training (Iteration 2)
+Training CRNN model for 15 epochs with LR=0.0005...
+* **[SUCCESS]** Training completed in 138.4s.
+
+### 📋 Task: Model Evaluation (Iteration 2)
+Running evaluate.py on the test split...
+* **[EVALUATION_METRICS]** Test Accuracy: 96.59%, Test F1 Score: 0.9358
 * **[QUALITY_GATE_PASSED]** Quality gate F1 score >= 0.9 achieved!
 
 ---
 
 ## 📈 Final Summary Report
-* **Duration**: 112.54 seconds
-* **Start Time**: 2026-07-24T06:20:26.588376Z
-* **End Time**: 2026-07-24T06:22:19.127908Z
+* **Duration**: 312.55 seconds
+* **Start Time**: 2026-07-24T07:27:51.423791Z
+* **End Time**: 2026-07-24T07:33:03.974304Z
 
 ### Metrics Details:
 ```
@@ -34,19 +45,28 @@ AUTOMATED DEVELOPMENT LOOP METRICS REPORT
 ==================================================
 Iteration 1:
   - Learning Rate   : 0.00100
-  - Train Loss      : 0.0384
-  - Val Loss        : 0.1025
-  - Val Accuracy    : 96.57%
-  - Test F1 Score   : 0.9195
-  - Test Accuracy   : 93.75%
-  - Elapsed Time    : 112.5s
+  - Train Loss      : 0.2061
+  - Val Loss        : 0.3219
+  - Val Accuracy    : 88.57%
+  - Test F1 Score   : 0.8677
+  - Test Accuracy   : 93.18%
+  - Elapsed Time    : 169.6s
   ----------------------------------------
-*** BEST PERFORMANCE MODEL (Iteration 1) ***
-  - Test F1 Score   : 0.9195
-  - Test Accuracy   : 93.75%
-  - Final Val Acc   : 96.57%
-  - Final Val Loss  : 0.1025
-Total duration: 112.54 seconds
+Iteration 2:
+  - Learning Rate   : 0.00050
+  - Train Loss      : 0.0711
+  - Val Loss        : 0.1937
+  - Val Accuracy    : 94.29%
+  - Test F1 Score   : 0.9358
+  - Test Accuracy   : 96.59%
+  - Elapsed Time    : 312.5s
+  ----------------------------------------
+*** BEST PERFORMANCE MODEL (Iteration 2) ***
+  - Test F1 Score   : 0.9358
+  - Test Accuracy   : 96.59%
+  - Final Val Acc   : 94.29%
+  - Final Val Loss  : 0.1937
+Total duration: 312.55 seconds
 ==================================================
 
 ```
@@ -55,6 +75,3 @@ Total duration: 112.54 seconds
 
 ### 📋 Task: Committing Model
 Staging checkpoints and reports, and creating git commit...
-* **[GIT_COMMIT_SUCCESS]** Successfully committed model checkpoint: [master 010f33f] Automated Dev Loop Success: Test F1=0.9195, Accuracy=93.75% (Iteration 1)
- 1 file changed, 57 insertions(+)
- create mode 100644 reports/training_run_trace.md
