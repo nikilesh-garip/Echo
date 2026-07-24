@@ -1,5 +1,6 @@
 import os
 import torch
+import torch.nn.functional as F
 import torchaudio
 import librosa
 import numpy as np
@@ -15,16 +16,6 @@ PREPROCESSING_CONFIG = {
     "window_size_seconds": 2, # Will be adjusted based on Primary/Verification passes
 }
 
-# The Target Hazard Classes (v1)
-# 1. Gunshot
-# 2. Explosion
-# 3. Distress scream
-# 4. Glass breaking
-# 5. Fire/smoke alarm
-# 6. Siren
-# 7. Aggressive shouting
-# 8. Normal/background
-
 CLASS_MAPPING = {
     "normal": 0,
     "gunshot": 1,
@@ -35,6 +26,48 @@ CLASS_MAPPING = {
     "siren": 6,
     "shouting": 7
 }
+
+def get_augmented_spectrogram(mel_spec):
+    """Computes Sobel and Laplacian derivatives and concatenates them to form the augmented mel-spectrogram."""
+    # mel_spec shape: (1, 64, T) or (batch, 1, 64, T). We handle both.
+    is_batched = mel_spec.ndim == 4
+    if is_batched:
+        x = mel_spec
+    else:
+        x = mel_spec.unsqueeze(0) # (1, 1, 64, T)
+    
+    # Sobel kernels
+    hu = torch.tensor([[-1.0, -2.0, -1.0],
+                       [ 0.0,  0.0,  0.0],
+                       [ 1.0,  2.0,  1.0]], device=x.device).view(1, 1, 3, 3)
+                       
+    hv = torch.tensor([[-1.0,  0.0,  1.0],
+                       [-2.0,  0.0,  2.0],
+                       [-1.0,  0.0,  1.0]], device=x.device).view(1, 1, 3, 3)
+                       
+    # Laplacian kernel
+    hl = torch.tensor([[ 0.0,  1.0,  0.0],
+                       [ 1.0, -4.0,  1.0],
+                       [ 0.0,  1.0,  0.0]], device=x.device).view(1, 1, 3, 3)
+                       
+    # Run convolutions with reflection padding to keep dimensions
+    x_pad = F.pad(x, (1, 1, 1, 1), mode='reflect')
+    x_u = F.conv2d(x_pad, hu)
+    x_v = F.conv2d(x_pad, hv)
+    
+    # First spatial derivative (Sobel magnitude)
+    x_first = torch.sqrt(x_u ** 2 + x_v ** 2 + 1e-8)
+    
+    # Second spatial derivative (Laplacian response)
+    x_second = F.conv2d(x_pad, hl)
+    
+    # Concatenate along the frequency axis (dim=2)
+    augmented = torch.cat([x, x_first, x_second], dim=2)
+    
+    if is_batched:
+        return augmented
+    else:
+        return augmented.squeeze(0) # (1, 192, T)
 
 class EchoDataset(Dataset):
     def __init__(self, data_list, config=PREPROCESSING_CONFIG, augment=False):
@@ -75,16 +108,11 @@ class EchoDataset(Dataset):
             gain = random.uniform(0.8, 1.2)
             waveform = waveform * gain
             
-            # Note: Additive background noise would be implemented here by mixing in other audio files
-            
         # Ensure fixed length based on window size (pad or truncate)
         target_length = int(self.config["sample_rate"] * self.config["window_size_seconds"])
         if waveform.shape[1] > target_length:
-            # Truncate
-            # We want to keep the most energetic part, but simple truncation works for now
             waveform = waveform[:, :target_length]
         elif waveform.shape[1] < target_length:
-            # Pad with zeros
             padding = target_length - waveform.shape[1]
             waveform = torch.nn.functional.pad(waveform, (0, padding))
             
@@ -97,14 +125,14 @@ class EchoDataset(Dataset):
         )
         mel_spec = mel_spectrogram(waveform)
         
-        # Convert to log scale (adding a small epsilon to avoid log(0))
+        # Convert to log scale
         log_mel_spec = torchaudio.transforms.AmplitudeToDB()(mel_spec)
         
-        # log_mel_spec shape: (1, 64, T)
+        # 4. Apply Spatial Derivative Feature Augmentation
+        augmented_spec = get_augmented_spectrogram(log_mel_spec) # (1, 192, T)
         
         label_idx = CLASS_MAPPING.get(label_str, 0)
-        
-        return log_mel_spec, torch.tensor(label_idx, dtype=torch.long)
+        return augmented_spec, torch.tensor(label_idx, dtype=torch.long)
 
 def get_dataloaders(train_data, val_data, test_data, batch_size=32, config=PREPROCESSING_CONFIG):
     train_dataset = EchoDataset(train_data, config=config, augment=True)

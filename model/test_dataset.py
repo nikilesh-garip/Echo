@@ -35,7 +35,7 @@ def test_pipeline():
         
         # Expected shape: (batch_size, 1, 64, T)
         assert log_mel.shape[1] == 1, "Channel dimension must be 1"
-        assert log_mel.shape[2] == PREPROCESSING_CONFIG["n_mels"], f"Mel bins must be {PREPROCESSING_CONFIG['n_mels']}"
+        assert log_mel.shape[2] == 3 * PREPROCESSING_CONFIG["n_mels"], f"Mel bins must be {3 * PREPROCESSING_CONFIG['n_mels']}"
         
         # target_T = target_length / hop_length + 1
         expected_T = int(PREPROCESSING_CONFIG["sample_rate"] * PREPROCESSING_CONFIG["window_size_seconds"] / PREPROCESSING_CONFIG["hop_length"]) + 1

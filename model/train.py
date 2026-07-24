@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from dataset import EchoDataset, get_dataloaders, PREPROCESSING_CONFIG
-from model import EchoCRNN
+from model import EchoTransformer
 import random
 
 # For reproducibility
@@ -53,7 +53,7 @@ def train_model(lr=0.001, batch_size=16, epochs=15):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     
-    model = EchoCRNN(num_classes=8).to(device)
+    model = EchoTransformer(num_classes=8).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
 

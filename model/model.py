@@ -2,77 +2,88 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class EchoCRNN(nn.Module):
-    def __init__(self, num_classes=8):
-        super(EchoCRNN, self).__init__()
-        
-        # Input shape: (batch, 1, 64 mels, T frames)
-        
-        # Block 1
-        self.conv1 = nn.Conv2d(in_channels=1, out_channels=16, kernel_size=3, padding=1)
-        self.bn1 = nn.BatchNorm2d(16)
-        self.pool1 = nn.MaxPool2d(kernel_size=2)
-        
-        # Block 2
-        self.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm2d(32)
-        self.pool2 = nn.MaxPool2d(kernel_size=2)
-        
-        # Block 3
-        self.conv3 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1)
-        self.bn3 = nn.BatchNorm2d(64)
-        self.pool3 = nn.MaxPool2d(kernel_size=2)
-        
-        # After 3 MaxPool2d(2) layers, the frequency dimension (64 mels) is reduced by 2^3 = 8.
-        # So 64 / 8 = 8 mel bins remain.
-        # The channel dimension is 64.
-        # When flattening frequency into channels, we get 64 channels * 8 bins = 512 features per time step.
-        
-        # GRU
-        self.gru = nn.GRU(
-            input_size=64 * 8, 
-            hidden_size=64, 
-            num_layers=1, 
-            batch_first=True, 
-            bidirectional=False
-        )
-        
-        # Classifier
-        self.fc = nn.Linear(64, num_classes)
+class ConvBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, pool_size=2):
+        super(ConvBlock, self).__init__()
+        # ConvBlock consists of two consecutive Conv2D-BatchNorm-ELU layers
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.elu1 = nn.ELU()
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.elu2 = nn.ELU()
+        self.pool = nn.MaxPool2d(kernel_size=pool_size) if pool_size else nn.Identity()
+        self.dropout = nn.Dropout(0.2)
 
     def forward(self, x):
-        # x: (batch, 1, 64, T)
+        x = self.elu1(self.bn1(self.conv1(x)))
+        x = self.elu2(self.bn2(self.conv2(x)))
+        x = self.pool(x)
+        x = self.dropout(x)
+        return x
+
+class EchoTransformer(nn.Module):
+    def __init__(self, num_classes=8, d_model=128, nhead=4, num_layers=2):
+        super(EchoTransformer, self).__init__()
         
-        x = self.pool1(F.relu(self.bn1(self.conv1(x))))
-        x = self.pool2(F.relu(self.bn2(self.conv2(x))))
-        x = self.pool3(F.relu(self.bn3(self.conv3(x))))
+        # 1. CNN Feature Extractor
+        # Input shape: (batch, 1, 192 frequency bins, T time frames)
+        # Note: 192 bins comes from the 3x concatenated spectrogram (Original + Sobel + Laplacian)
+        self.conv1 = ConvBlock(1, 16, pool_size=2)  # 192 -> 96
+        self.conv2 = ConvBlock(16, 32, pool_size=2) # 96 -> 48
+        self.conv3 = ConvBlock(32, 64, pool_size=2) # 48 -> 24
         
-        # x is now (batch, 64, 8, T_reduced)
+        # After 3 MaxPool layers of kernel 2, frequency bins downsample by 8 (192 / 8 = 24).
+        # Flattened features dimension per time step: 64 channels * 24 bins = 1536 features.
+        self.feature_proj = nn.Linear(64 * 24, d_model)
         
-        # Reshape to (batch, T_reduced, features) for GRU
+        # 2. Positional Encoding
+        self.pos_encoder = nn.Parameter(torch.randn(1, 1000, d_model)) # Max sequence length 1000 frames
+        
+        # 3. Transformer Encoder (Self-Attention temporal model)
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=nhead,
+            dim_feedforward=d_model * 4,
+            dropout=0.2,
+            batch_first=True
+        )
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        
+        # 4. Classifier
+        self.fc = nn.Linear(d_model, num_classes)
+
+    def forward(self, x):
+        # Input: (batch, 1, 192, T)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        # Shape: (batch, 64, 24, T_reduced)
+        
         batch_size, channels, freqs, frames = x.size()
         
-        # Permute to (batch, frames, channels, freqs)
-        x = x.permute(0, 3, 1, 2).contiguous() 
+        # Permute to (batch, T_reduced, channels, freqs)
+        x = x.permute(0, 3, 1, 2).contiguous()
+        # Flatten to (batch, T_reduced, 1536)
+        x = x.view(batch_size, frames, channels * freqs)
         
-        # Flatten channels and freqs into a single feature dimension
-        x = x.view(batch_size, frames, channels * freqs) # (batch, frames, 512)
+        # Project to d_model (batch, T_reduced, 128)
+        x = self.feature_proj(x)
         
-        # GRU forward pass
-        output, hn = self.gru(x)
-        # hn shape is (1, batch, 64) because it's 1-layer, unidirectional
+        # Add Positional Encoding
+        x = x + self.pos_encoder[:, :frames, :]
         
-        # Extract the hidden state from the final time step
-        gru_out = hn[0]
+        # Self-Attention encoding
+        x = self.transformer_encoder(x)
         
-        # Fully connected layer
-        logits = self.fc(gru_out)
+        # Global Temporal Average Pooling to get clip-level embeddings
+        x = torch.mean(x, dim=1) # (batch, d_model)
         
-        # Return raw logits. 
-        # CrossEntropyLoss expects logits during training.
+        # Classifier
+        logits = self.fc(x)
         return logits
 
     def predict(self, x):
-        """Helper for inference returning probabilities"""
+        """Helper for inference returning class probabilities."""
         logits = self.forward(x)
         return F.softmax(logits, dim=1)

@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, precision_recall_fscore_support
 from dataset import EchoDataset, PREPROCESSING_CONFIG
-from model import EchoCRNN
+from model import EchoTransformer
 from torch.utils.data import DataLoader
 
 def evaluate_model():
@@ -26,7 +26,7 @@ def evaluate_model():
     
     # Initialize and load model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = EchoCRNN(num_classes=8).to(device)
+    model = EchoTransformer(num_classes=8).to(device)
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
     

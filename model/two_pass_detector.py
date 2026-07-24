@@ -4,14 +4,14 @@ import torchaudio
 import numpy as np
 import soundfile as sf
 import torch.nn.functional as F
-from model import EchoCRNN
-from dataset import PREPROCESSING_CONFIG, CLASS_MAPPING
+from model import EchoTransformer
+from dataset import PREPROCESSING_CONFIG, CLASS_MAPPING, get_augmented_spectrogram
 
 class TwoPassDetector:
     def __init__(self, model_path, config=PREPROCESSING_CONFIG):
         self.config = config
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = EchoCRNN(num_classes=8).to(self.device)
+        self.model = EchoTransformer(num_classes=8).to(self.device)
         self.model.load_state_dict(torch.load(model_path, map_location=self.device))
         self.model.eval()
         
@@ -38,17 +38,11 @@ class TwoPassDetector:
         if audio_np.ndim > 1:
             audio_np = np.mean(audio_np, axis=1)
             
-        # Resample if needed
-        if sr != self.config["sample_rate"]:
-            # Quick linear resampling using numpy
-            num_samples = int(len(audio_np) * self.config["sample_rate"] / sr)
-            audio_np = np.interp(
-                np.linspace(0, len(audio_np), num_samples, endpoint=False),
-                np.arange(len(audio_np)),
-                audio_np
-            )
-            
         waveform = torch.from_numpy(audio_np).float().unsqueeze(0) # (1, num_samples)
+        
+        # Resample if needed using torchaudio's band-limited sinc interpolation (prevents aliasing)
+        if sr != self.config["sample_rate"]:
+            waveform = torchaudio.functional.resample(waveform, orig_freq=sr, new_freq=self.config["sample_rate"])
         
         # Fit to target window length (pad or truncate)
         target_length = int(self.config["sample_rate"] * target_seconds)
@@ -58,9 +52,10 @@ class TwoPassDetector:
             padding = target_length - waveform.shape[1]
             waveform = torch.nn.functional.pad(waveform, (0, padding))
             
-        # Extract Log-Mel
+        # Extract Log-Mel and compute spatial derivative augmented spectrogram
         log_mel = self._extract_log_mel(waveform) # (1, 64, T)
-        return log_mel.unsqueeze(0).to(self.device) # (1, 1, 64, T)
+        augmented = get_augmented_spectrogram(log_mel) # (1, 192, T)
+        return augmented.unsqueeze(0).to(self.device) # (1, 1, 192, T)
 
     def run_pass_1(self, audio_2s_np, sr):
         """

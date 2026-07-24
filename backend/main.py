@@ -3,11 +3,11 @@ import sys
 import time
 import sqlite3
 import requests
-# Force uvicorn reload after training
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from contextlib import contextmanager
 
 # Add parent directory to path so we can import model modules
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model")))
@@ -18,45 +18,56 @@ from risk_scorer import RiskScorer
 DB_PATH = "echo_backend.db"
 MODEL_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model", "checkpoints", "best_model.pth"))
 
-def init_db():
+@contextmanager
+def get_db():
+    """Context manager to prevent SQLite connection leaks under runtime exceptions."""
     conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            timestamp REAL NOT NULL,
-            class_name TEXT NOT NULL,
-            primary_conf REAL NOT NULL,
-            verification_conf REAL NOT NULL,
-            risk_score INTEGER NOT NULL,
-            risk_level TEXT NOT NULL
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS contacts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            name TEXT NOT NULL,
-            phone TEXT NOT NULL,
-            relation TEXT
-        )
-    """)
-    conn.commit()
-    conn.close()
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+def init_db():
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                timestamp REAL NOT NULL,
+                class_name TEXT NOT NULL,
+                primary_conf REAL NOT NULL,
+                verification_conf REAL NOT NULL,
+                risk_score INTEGER NOT NULL,
+                risk_level TEXT NOT NULL
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS contacts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                relation TEXT
+            )
+        """)
+        conn.commit()
 
 init_db()
 
 app = FastAPI(title="Echo Smart Emergency System API", version="1.0")
 
-# Initialize Detector and Scorer
-detector = None
-if os.path.exists(MODEL_PATH):
-    try:
-        detector = TwoPassDetector(MODEL_PATH)
-        print("Successfully loaded CRNN model for inference!")
-    except Exception as e:
-        print(f"Error loading model: {e}")
+# Initialize Detector and Scorer (Fail fast on startup if checkpoint is missing or corrupt)
+if not os.path.exists(MODEL_PATH):
+    print(f"CRITICAL: Model checkpoint missing at: {MODEL_PATH}")
+    sys.exit(1)
+
+try:
+    detector = TwoPassDetector(MODEL_PATH)
+    print("Successfully loaded CRNN model for inference!")
+except Exception as e:
+    print(f"CRITICAL ERROR loading model: {e}")
+    sys.exit(1)
 
 scorer = RiskScorer()
 
@@ -108,6 +119,7 @@ async def detect_audio(
     if detector is None:
         raise HTTPException(status_code=500, detail="CRNN model is not loaded on backend.")
         
+    temp_path = None
     try:
         # Read uploaded file bytes
         file_bytes = await file.read()
@@ -120,8 +132,17 @@ async def detect_audio(
             
         import soundfile as sf
         audio_data, sr = sf.read(temp_path)
-        os.remove(temp_path) # Clean up
-        
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to process uploaded audio: {str(e)}")
+    finally:
+        # Prevent temporary file leaks by ensuring cleanup on failure
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+                
+    try:
         if duration <= 3.0:
             # Run Pass 1
             has_candidate, candidate, confidence = detector.run_pass_1(audio_data, sr)
@@ -157,8 +178,6 @@ async def detect_audio(
             }
         else:
             # Run Pass 2 (Requires candidate parameter to be verified)
-            # Pass 2 is triggered by client with a 5s buffer. We evaluate the candidate.
-            # For simplicity, we search for the highest non-normal class in Pass 2 as verification
             has_candidate, candidate, p1_conf = detector.run_pass_1(audio_data[:int(len(audio_data)*2/5)], sr)
             
             if not has_candidate:
@@ -198,16 +217,16 @@ async def detect_audio(
 
 @app.post("/events", response_model=EventResponse)
 def log_event(event: EventCreate):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    timestamp = time.time()
-    cursor.execute(
-        "INSERT INTO events (user_id, timestamp, class_name, primary_conf, verification_conf, risk_score, risk_level) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (event.user_id, timestamp, event.class_name, event.primary_conf, event.verification_conf, event.risk_score, event.risk_level)
-    )
-    event_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        timestamp = time.time()
+        cursor.execute(
+            "INSERT INTO events (user_id, timestamp, class_name, primary_conf, verification_conf, risk_score, risk_level) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (event.user_id, timestamp, event.class_name, event.primary_conf, event.verification_conf, event.risk_score, event.risk_level)
+        )
+        event_id = cursor.lastrowid
+        conn.commit()
+        
     return {
         "id": event_id,
         "user_id": event.user_id,
@@ -221,25 +240,25 @@ def log_event(event: EventCreate):
 
 @app.get("/events/{user_id}", response_model=List[EventResponse])
 def get_event_history(user_id: str):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM events WHERE user_id = ? ORDER BY timestamp DESC", (user_id,))
-    rows = cursor.fetchall()
-    conn.close()
+    with get_db() as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM events WHERE user_id = ? ORDER BY timestamp DESC", (user_id,))
+        rows = cursor.fetchall()
+        
     return [dict(row) for row in rows]
 
 @app.post("/contacts", response_model=ContactResponse)
 def add_contact(contact: ContactCreate):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO contacts (user_id, name, phone, relation) VALUES (?, ?, ?, ?)",
-        (contact.user_id, contact.name, contact.phone, contact.relation)
-    )
-    contact_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO contacts (user_id, name, phone, relation) VALUES (?, ?, ?, ?)",
+            (contact.user_id, contact.name, contact.phone, contact.relation)
+        )
+        contact_id = cursor.lastrowid
+        conn.commit()
+        
     return {
         "id": contact_id,
         "user_id": contact.user_id,
@@ -250,21 +269,21 @@ def add_contact(contact: ContactCreate):
 
 @app.get("/contacts/{user_id}", response_model=List[ContactResponse])
 def get_contacts(user_id: str):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM contacts WHERE user_id = ?", (user_id,))
-    rows = cursor.fetchall()
-    conn.close()
+    with get_db() as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM contacts WHERE user_id = ?", (user_id,))
+        rows = cursor.fetchall()
+        
     return [dict(row) for row in rows]
 
 @app.delete("/contacts/{contact_id}")
 def delete_contact(contact_id: int):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM contacts WHERE id = ?", (contact_id,))
-    conn.commit()
-    conn.close()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM contacts WHERE id = ?", (contact_id,))
+        conn.commit()
+        
     return {"status": "success", "message": f"Contact {contact_id} deleted"}
 
 @app.get("/nearby")
