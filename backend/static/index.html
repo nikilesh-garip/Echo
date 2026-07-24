@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ECHO — AI Emergency Guidance System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Interactive laptop layout container for demo presentation -->
+        <div class="demo-presentation">
+            <div class="presentation-header">
+                <h1>ECHO Dashboard</h1>
+                <p>AI-Based Hazardous Sound Detection & Smart Emergency Guidance</p>
+            </div>
+            
+            <div class="simulator-wrapper">
+                <!-- Phone Frame -->
+                <div class="phone-frame">
+                    <div class="phone-notch"></div>
+                    <div class="phone-screen">
+                        <!-- Status Bar -->
+                        <div class="status-bar">
+                            <span class="time" id="status-time">09:41</span>
+                            <div class="battery-status">
+                                <div class="signal-dot green" id="mic-status-indicator"></div>
+                                <span id="mic-status-text" style="font-size: 10px; margin-right: 5px;">Idle</span>
+                                <div class="battery"></div>
+                            </div>
+                        </div>
+
+                        <!-- Main Screen Content Area -->
+                        <div class="screen-content" id="screen-container">
+                            
+                            <!-- SCREEN: HOME -->
+                            <div class="screen active" id="screen-home">
+                                <div class="brand-section">
+                                    <div class="echo-logo-ring">
+                                        <div class="echo-logo-core"></div>
+                                    </div>
+                                    <h2>ECHO</h2>
+                                    <p class="tagline">Acoustic Shield & Emergency Guide</p>
+                                </div>
+
+                                <div class="monitor-switch-card">
+                                    <div class="card-header">
+                                        <span>System Protection</span>
+                                        <span class="status-badge" id="system-status-badge">Off</span>
+                                    </div>
+                                    <button class="toggle-btn" id="start-monitoring-btn">START MONITORING</button>
+                                </div>
+
+                                <div class="context-toggles">
+                                    <h3>Device Context Signals</h3>
+                                    <div class="toggle-row">
+                                        <label for="ctx-media">Media Playback Active (Action Movie)</label>
+                                        <input type="checkbox" id="ctx-media">
+                                    </div>
+                                    <div class="toggle-row">
+                                        <label for="ctx-motion">Sudden Motion / Running Detected</label>
+                                        <input type="checkbox" id="ctx-motion">
+                                    </div>
+                                </div>
+
+                                <div class="last-event-card">
+                                    <h4>Last Acoustic Event</h4>
+                                    <div id="last-event-details">No hazard events logged in current session.</div>
+                                </div>
+                            </div>
+
+                            <!-- SCREEN: LIVE MONITOR -->
+                            <div class="screen" id="screen-monitor">
+                                <div class="monitor-header">
+                                    <h2>Live Acoustic Monitor</h2>
+                                    <div class="pulse-wrapper" id="monitor-pulse-wrapper">
+                                        <div class="pulse-ring"></div>
+                                        <div class="pulse-center"></div>
+                                    </div>
+                                </div>
+
+                                <div class="spectrogram-visualizer">
+                                    <canvas id="waveform-canvas"></canvas>
+                                    <span class="viz-label">16 kHz Real-Time Rolling Buffer</span>
+                                </div>
+
+                                <div class="monitor-metrics">
+                                    <div class="metric-box">
+                                        <span class="label">Current Class</span>
+                                        <span class="value" id="mon-class">NORMAL</span>
+                                    </div>
+                                    <div class="metric-box">
+                                        <span class="label">Risk Score</span>
+                                        <span class="value" id="mon-risk">0</span>
+                                    </div>
+                                </div>
+
+                                <div class="two-pass-results">
+                                    <h4>Two-Pass CRNN Inference Metrics</h4>
+                                    <div class="metric-row">
+                                        <span>Pass 1 (Primary - 2s):</span>
+                                        <span id="mon-p1-val">0.0%</span>
+                                    </div>
+                                    <div class="metric-row">
+                                        <span>Pass 2 (Verification - 5s):</span>
+                                        <span id="mon-p2-val">0.0%</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- SCREEN: HISTORY -->
+                            <div class="screen" id="screen-history">
+                                <h2>Acoustic Event History</h2>
+                                <p class="privacy-note">Privacy protected. Backend retains metadata only. Raw audio is immediately discarded.</p>
+                                <div class="history-list" id="history-items-container">
+                                    <!-- Log elements will be rendered here dynamically -->
+                                    <div class="empty-state">No events recorded.</div>
+                                </div>
+                                <button class="clear-btn" id="clear-history-btn">Clear Log History</button>
+                            </div>
+
+                            <!-- SCREEN: CONTACTS -->
+                            <div class="screen" id="screen-contacts">
+                                <h2>Emergency Contacts</h2>
+                                <div class="contacts-list" id="contacts-container">
+                                    <!-- Dynamic Contacts -->
+                                </div>
+                                
+                                <div class="add-contact-form">
+                                    <h3>Add Contact</h3>
+                                    <input type="text" id="contact-name" placeholder="Full Name">
+                                    <input type="text" id="contact-phone" placeholder="Phone Number">
+                                    <input type="text" id="contact-relation" placeholder="Relation (e.g. Spouse)">
+                                    <button class="add-btn" id="save-contact-btn">Add Contact</button>
+                                </div>
+                            </div>
+
+                            <!-- SCREEN: SETTINGS -->
+                            <div class="screen" id="screen-settings">
+                                <h2>Settings</h2>
+                                <div class="settings-group">
+                                    <h3>Acoustic Detection Sensitivity</h3>
+                                    <div class="slider-row">
+                                        <input type="range" id="sensitivity-slider" min="1" max="10" value="5">
+                                        <span id="sensitivity-val">Medium (0.50)</span>
+                                    </div>
+                                </div>
+                                
+                                <div class="settings-group">
+                                    <h3>Permissions & Privacy</h3>
+                                    <div class="toggle-row">
+                                        <span>Microphone Permission Granted</span>
+                                        <span class="status-dot green"></span>
+                                    </div>
+                                    <div class="toggle-row">
+                                        <span>Location Services Active</span>
+                                        <span class="status-dot green"></span>
+                                    </div>
+                                </div>
+
+                                <div class="settings-group">
+                                    <h3>System Details</h3>
+                                    <div class="info-row">
+                                        <span>Model Architecture:</span>
+                                        <span>CRNN (PyTorch)</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span>Edge Engine:</span>
+                                        <span>TFLite Quantized (INT8)</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- SCREEN: DEMO MODE -->
+                            <div class="screen" id="screen-demo">
+                                <h2>Demo & Panel Testing</h2>
+                                <p class="demo-explanation">Test the Echo sound classification pipeline and context risk scorer directly using preset WAV clips or live device audio injection.</p>
+                                
+                                <div class="demo-card">
+                                    <h3>Method A — Live Mic Injection</h3>
+                                    <p>Speak, shout or play sound near the device microphone.</p>
+                                    <button class="demo-trigger-btn" id="demo-mic-btn">Start Live Demo Listening</button>
+                                </div>
+
+                                <div class="demo-card">
+                                    <h3>Method B — Predefined WAV Files</h3>
+                                    <p>Bypasses room acoustics to test model inference directly.</p>
+                                    <div class="wav-grid">
+                                        <button class="wav-btn" data-sound="gunshot">1. Gunshot</button>
+                                        <button class="wav-btn" data-sound="scream">2. Distress Scream</button>
+                                        <button class="wav-btn" data-sound="glass_breaking">3. Glass Break</button>
+                                        <button class="wav-btn" data-sound="explosion">4. Explosion</button>
+                                        <button class="wav-btn" data-sound="fire_alarm">5. Fire Alarm</button>
+                                        <button class="wav-btn" data-sound="siren">6. Siren</button>
+                                        <button class="wav-btn" data-sound="shouting">7. Shouting</button>
+                                        <button class="wav-btn" data-sound="normal">8. Background</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+
+                        <!-- SCREEN OVERLAY: ALERT MODAL (Triggered during Hazard Confirmation) -->
+                        <div class="alert-overlay" id="alert-modal">
+                            <div class="alert-box">
+                                <div class="alert-header">
+                                    <div class="danger-badge">CRITICAL ALERT</div>
+                                    <h2 id="alert-title">Possible Threat</h2>
+                                    <div class="alert-risk-meter">
+                                        <span>Risk Score:</span>
+                                        <strong id="alert-risk-score">90</strong>
+                                        <span id="alert-risk-lvl">(HIGH RISK)</span>
+                                    </div>
+                                </div>
+                                
+                                <div class="alert-body">
+                                    <div class="alert-section">
+                                        <h4>Inference Metrics</h4>
+                                        <div class="metrics-grid">
+                                            <div>Primary Conf: <span id="alert-p1">95%</span></div>
+                                            <div>Verification Conf: <span id="alert-p2">88%</span></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="alert-section">
+                                        <h4>Emergency Guidance</h4>
+                                        <ul id="alert-guidance-list">
+                                            <li>Cover immediately.</li>
+                                        </ul>
+                                    </div>
+
+                                    <div class="alert-section">
+                                        <h4>Nearby Emergency Facilities</h4>
+                                        <div class="places-list" id="alert-places-container">
+                                            <!-- Dynamically filled nearby police/hospitals -->
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="alert-footer">
+                                    <button class="action-btn call-btn" onclick="alert('Calling Emergency Services (112/911)...')">Call Services</button>
+                                    <button class="action-btn safe-btn" id="dismiss-alert-btn">I'm Safe / False Alarm</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Navigation Bar -->
+                        <div class="nav-bar">
+                            <div class="nav-item active" data-screen="home">
+                                <svg viewBox="0 0 24 24" width="22" height="22"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" fill="currentColor"/></svg>
+                                <span>Home</span>
+                            </div>
+                            <div class="nav-item" data-screen="monitor">
+                                <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" fill="currentColor"/></svg>
+                                <span>Monitor</span>
+                            </div>
+                            <div class="nav-item" data-screen="history">
+                                <svg viewBox="0 0 24 24" width="22" height="22"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" fill="currentColor"/></svg>
+                                <span>History</span>
+                            </div>
+                            <div class="nav-item" data-screen="contacts">
+                                <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="currentColor"/></svg>
+                                <span>Contacts</span>
+                            </div>
+                            <div class="nav-item" data-screen="demo">
+                                <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z" fill="currentColor"/></svg>
+                                <span>Demo</span>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>
