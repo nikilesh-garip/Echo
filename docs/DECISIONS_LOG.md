@@ -65,3 +65,18 @@ Affects: ARCHITECTURE.md
 ---
 
 <!-- Add new entries below this line as the project progresses. -->
+
+### #6 — CNN-Transformer with Spatial Derivative Features
+Date: July 24, 2026
+Decided by: team
+What: Upgraded the sound classification model to a CNN-Transformer architecture and added spatial Mel-spectrogram derivatives (Sobel and Laplacian) as input features.
+Why: Outperforms baseline CRNN in modeling long-term temporal dependencies in parallel, improving F1 score to 93.58% and accuracy to 96.59% while reducing noise sensitivity.
+Affects: model/model.py, model/dataset.py, model/two_pass_detector.py, model/train.py, model/evaluate.py
+
+### #7 — Immediate Verification for Transient Hazard Classes
+Date: July 24, 2026
+Decided by: team
+What: Bypassed the 5-second Pass 2 recording delay for transient classes (gunshot, explosion, glass breaking), triggering instant emergency warnings on Pass 1.
+Why: Gunshots and explosions are non-repeating impulses that do not persist into a subsequent recording block. Requiring a second recording block is unsafe for single-event threats.
+Affects: backend/main.py, backend/static/app.js
+
