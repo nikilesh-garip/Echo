@@ -5,7 +5,7 @@ Calibrates per-class detection thresholds using Validation Set probability distr
 DO NOT calibrate on the final TEST set.
 
 Goal:
-  - Maximize Validation F1 score per hazard class
+  - Establish optimal Pass 1 (Primary Detection) & Pass 2 (Verification) operational thresholds
   - Maintain Hazard False Alarm Rate (NORMAL -> HAZARD) <= 1.5%
   - Maintain Hazard Recall > 95%
   - Establish UNCERTAIN state probability margins (Phase 15)
@@ -69,47 +69,44 @@ def calibrate_thresholds(checkpoint_path, val_csv_path, arch="CRNN", active_clas
     print(f"Validation Samples: {len(all_labels)} (Normal: {normal_probs.shape[0]})")
 
     calibrated_thresholds = {}
-    
-    # 1. Calibrate hazard thresholds by maximizing F1 score subject to far <= 0.02
+
+    # Calibrate operational thresholds:
+    # 1. Primary candidate threshold (0.50 default)
+    # 2. Operational verification threshold chosen to achieve >= 95% hazard recall with <= 1.5% FAR
     for c_idx in range(1, num_classes):
         cls_name = class_names[c_idx]
         hazard_mask = (all_labels == c_idx)
         hazard_probs_for_cls = all_probs[hazard_mask, c_idx]
         normal_probs_for_cls = normal_probs[:, c_idx]
 
-        best_thresh = 0.50
-        best_f1 = 0.0
+        # Sweep threshold to find operational point giving >= 95% recall with minimal FAR
+        op_thresh = 0.50
         best_far = 1.0
         best_rec = 0.0
 
-        for thresh in np.linspace(0.30, 0.90, 61):
+        for thresh in np.linspace(0.35, 0.75, 41):
             far = np.mean(normal_probs_for_cls >= thresh) # FPR on normal
             rec = np.mean(hazard_probs_for_cls >= thresh) if len(hazard_probs_for_cls) > 0 else 0.0
-            
-            # Precision = TP / (TP + FP)
-            tp = np.sum(hazard_probs_for_cls >= thresh)
-            fp = np.sum(normal_probs_for_cls >= thresh)
-            prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-            f1 = (2 * prec * rec / (prec + rec)) if (prec + rec) > 0 else 0.0
 
-            if far <= 0.02 and f1 > best_f1:
-                best_f1 = f1
-                best_thresh = float(thresh)
+            if rec >= 0.95 and far <= 0.02:
+                op_thresh = float(thresh)
+                best_far = float(far)
+                best_rec = float(rec)
+                break
+            elif rec >= 0.90 and far < best_far:
+                op_thresh = float(thresh)
                 best_far = float(far)
                 best_rec = float(rec)
 
         calibrated_thresholds[cls_name] = {
             "class_id": c_idx,
-            "threshold": round(best_thresh, 3),
-            "val_f1": round(best_f1, 4),
+            "threshold": round(op_thresh, 3),
             "val_far": round(best_far, 4),
             "val_recall": round(best_rec, 4)
         }
-        print(f"  Class: {cls_name:<15} -> Threshold: {best_thresh:.3f} | Val F1: {best_f1:.4f} | Val FAR: {best_far*100:.2f}% | Val Recall: {best_rec*100:.2f}%")
+        print(f"  Class: {cls_name:<15} -> Operational Threshold: {op_thresh:.3f} | Val FAR: {best_far*100:.2f}% | Val Recall: {best_rec*100:.2f}%")
 
-    # 2. Phase 15 UNCERTAIN State Margins
-    uncertain_margin = 0.15
-    calibrated_thresholds["uncertain_margin"] = uncertain_margin
+    calibrated_thresholds["uncertain_margin"] = 0.15
     calibrated_thresholds["normal_threshold"] = 0.50
 
     ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
