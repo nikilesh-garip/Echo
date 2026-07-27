@@ -1,0 +1,29 @@
+ECHO — Data Split Summary
+============================================================
+
+TRAIN  (7618 clips)
+  explosion                0  ( 0.0%)
+  fire_alarm               0  ( 0.0%)
+  gunshot               2854  (37.5%)
+  human_distress           0  ( 0.0%)
+  normal                4000  (52.5%)
+  siren                  764  (10.0%)
+  Source breakdown: {'US8K': 5075, 'VOICe_train': 2543}
+
+VAL  (1669 clips)
+  explosion                0  ( 0.0%)
+  fire_alarm               0  ( 0.0%)
+  gunshot                884  (53.0%)
+  human_distress           0  ( 0.0%)
+  normal                 703  (42.1%)
+  siren                   82  ( 4.9%)
+  Source breakdown: {'US8K': 816, 'VOICe_val': 853}
+
+TEST  (5776 clips)
+  explosion               63  ( 1.1%)
+  fire_alarm             209  ( 3.6%)
+  gunshot                930  (16.1%)
+  human_distress         271  ( 4.7%)
+  normal                4169  (72.2%)
+  siren                  134  ( 2.3%)
+  Source breakdown: {'US8K': 837, 'FSD50K_eval': 4169, 'VOICe_test': 770}

@@ -1,0 +1,429 @@
+﻿# =============================================================================
+# ECHO — Approved Class Mapping Configuration
+# Phase: Phase 4 — Final Label Mapping
+# Approved: 2026-07-27  (Phase 3 gate passed)
+# Branch: ml/rebuild-audio-pipeline
+#
+# RULES:
+#   - Every original dataset label used must appear here.
+#   - Severity: DANGER | WARNING | NORMAL | EXCLUDED
+#   - class_id integers are contiguous from 0 (used by model output layer).
+#   - Do NOT change class_ids after any experiment begins — create a new mapping version.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Final approved Echo classes
+# ---------------------------------------------------------------------------
+echo_classes:
+  - class_id: 0
+    name: normal
+    severity: NORMAL
+    description: >
+      Background / everyday non-hazardous audio. Model must NOT trigger any
+      alert on this class. Anything not mapped to a hazard class below lands
+      here. High sample count required to anchor the model.
+
+  - class_id: 1
+    name: gunshot
+    severity: DANGER
+    description: >
+      Gunfire, firearms discharge. Immediate DANGER alert. Notifies emergency
+      contacts. Transient impulsive event.
+
+  - class_id: 2
+    name: explosion
+    severity: DANGER
+    description: >
+      Blast, detonation. DANGER alert. Kept separate from gunshot per Phase 3
+      decision. Low sample count — train cautiously; monitor FNR carefully.
+
+  - class_id: 3
+    name: human_distress
+    severity: WARNING
+    description: >
+      Screaming, shouting, yelling — merged single class per Phase 3 decision.
+      WARNING alert. Allows user confirmation before escalating.
+      Sources: FSD50K Screaming + Shout + Yell.
+
+  - class_id: 4
+    name: siren
+    severity: WARNING
+    description: >
+      Emergency vehicle siren or alarm siren. WARNING (nearby emergency
+      vehicle; not necessarily a direct threat to user). Sources: US8K siren
+      + FSD50K Siren.
+
+  - class_id: 5
+    name: fire_alarm
+    severity: DANGER
+    description: >
+      Smoke alarm or fire alarm tone. DANGER alert. Very few clean samples
+      (~150); monitor closely. Sources: FSD50K Alarm (filtered to smoke/fire
+      alarm only, excluding car alarm/phone/doorbell).
+
+num_classes: 6
+
+# ---------------------------------------------------------------------------
+# EXCLUDED classes (do not appear in model output)
+# ---------------------------------------------------------------------------
+excluded_classes:
+  - original_label: glass_breaking
+    reason: EXCLUDED_BY_USER_PHASE3
+    notes: >
+      User chose to exclude Glass Breaking entirely in Phase 3.
+      Despite strong sample count (~4,500), this class is not in scope for
+      this version. May be added in a future version.
+
+  - original_label: fireworks
+    reason: EXCLUDED_ACOUSTIC_CONFUSION
+    notes: >
+      FSD50K Fireworks acoustically near-identical to Gunshot. Including both
+      as separate classes would degrade gunshot recall. Clips must NOT be used
+      as training data for any hazard class. If present in a batch, exclude
+      that clip entirely.
+
+  - original_label: babycry
+    reason: EXCLUDED_BY_USER_PHASE3
+    notes: >
+      VOICe babycry has ~2,800 extractable windows but no clear Echo class
+      mapping. User chose to exclude this version. Do NOT map to
+      human_distress without user approval.
+
+# ---------------------------------------------------------------------------
+# Original label → Echo class mapping (every used label listed)
+# ---------------------------------------------------------------------------
+label_mappings:
+
+  # UrbanSound8K
+  - dataset: UrbanSound8K
+    original_label: gun_shot
+    echo_class: gunshot
+    confidence: HIGH
+    notes: "Primary gunshot source. Use all available folds for training."
+
+  - dataset: UrbanSound8K
+    original_label: siren
+    echo_class: siren
+    confidence: HIGH
+    notes: >
+      Includes car alarms and industrial alarms in addition to emergency
+      vehicle sirens. Accept all as siren class — context scorer handles
+      disambiguation downstream.
+
+  - dataset: UrbanSound8K
+    original_label: dog_bark
+    echo_class: normal
+    confidence: HIGH
+    notes: "Critical hard negative. Loud impulsive — must not trigger gunshot."
+
+  - dataset: UrbanSound8K
+    original_label: children_playing
+    echo_class: normal
+    confidence: HIGH
+    notes: "General background."
+
+  - dataset: UrbanSound8K
+    original_label: air_conditioner
+    echo_class: normal
+    confidence: HIGH
+    notes: "Continuous noise — good negative."
+
+  - dataset: UrbanSound8K
+    original_label: street_music
+    echo_class: normal
+    confidence: HIGH
+    notes: "Rhythmic patterns — important hard negative."
+
+  - dataset: UrbanSound8K
+    original_label: engine_idling
+    echo_class: normal
+    confidence: HIGH
+    notes: "Continuous background."
+
+  - dataset: UrbanSound8K
+    original_label: jackhammer
+    echo_class: normal
+    confidence: HIGH
+    notes: >
+      CRITICAL hard negative: rhythmic impulsive sound near gunshot spectral
+      profile. Must not trigger gunshot. Include in normal training set.
+
+  - dataset: UrbanSound8K
+    original_label: drilling
+    echo_class: normal
+    confidence: HIGH
+    notes: "Similar to jackhammer. Hard negative."
+
+  - dataset: UrbanSound8K
+    original_label: car_horn
+    echo_class: normal
+    confidence: MEDIUM
+    notes: "Not an emergency signal. Map to normal."
+
+  # FSD50K — Hazard labels
+  - dataset: FSD50K
+    original_label: Gunshot_and_gunfire
+    echo_class: gunshot
+    confidence: HIGH
+    filter_rule: >
+      Accept clips where co-labels do NOT include: Fireworks, Music, Animal.
+      Clips may co-occur with: Explosion, Boom — still accept (related acoustic event).
+    notes: "348 dev clips. Multi-label — apply filter_rule."
+
+  - dataset: FSD50K
+    original_label: Explosion
+    echo_class: explosion
+    confidence: MEDIUM
+    filter_rule: >
+      EXCLUDE any clip where Fireworks is a co-label. 
+      EXCLUDE any clip where Music is a co-label.
+      Accept co-occurrence with: Boom, Gunshot_and_gunfire, Fire.
+    notes: >
+      After filtering Fireworks co-occurrences, expect ~250-300 usable clips.
+      Low sample count — handle with class weights in loss function.
+
+  - dataset: FSD50K
+    original_label: Screaming
+    echo_class: human_distress
+    confidence: HIGH
+    filter_rule: "Accept all Screaming clips. No exclusion needed."
+    notes: "254 dev clips. Best scream source."
+
+  - dataset: FSD50K
+    original_label: Shout
+    echo_class: human_distress
+    confidence: MEDIUM
+    filter_rule: >
+      Accept clips. Exclude if co-labeled with Crowd + Music (likely concert
+      crowd, not distress).
+    notes: "216 dev clips. Merged with Screaming into human_distress."
+
+  - dataset: FSD50K
+    original_label: Yell
+    echo_class: human_distress
+    confidence: MEDIUM
+    filter_rule: "Accept all Yell clips."
+    notes: "139 dev clips. Merged with Screaming into human_distress."
+
+  - dataset: FSD50K
+    original_label: Siren
+    echo_class: siren
+    confidence: HIGH
+    filter_rule: "Accept all. Low count (77); supplement with US8K."
+    notes: "77 dev clips."
+
+  - dataset: FSD50K
+    original_label: Alarm
+    echo_class: fire_alarm
+    confidence: LOW
+    filter_rule: >
+      STRICT FILTER. Accept ONLY clips where co-labels include:
+        Fire, Smoke_detector, or where no co-label indicates non-fire context.
+      EXCLUDE if co-labels include: Vehicle, Car, Ringtone, Doorbell,
+        Bicycle_bell, Clock, Music.
+      Expected yield: ~120-180 clips from 1,280 total.
+    notes: >
+      Alarm is the most heterogeneous label in FSD50K. This filter is
+      aggressive by design. Better to have 150 clean clips than 1,280
+      noisy ones. Low sample count — use class weights heavily.
+
+  - dataset: FSD50K
+    original_label: Fire
+    echo_class: normal
+    confidence: LOW
+    filter_rule: >
+      Accept Fire clips ONLY if also co-labeled with Alarm (fire alarm
+      context). If Fire-only (crackling fire, campfire) → map to NORMAL.
+      Crackling fire is not an emergency signal by itself.
+    notes: >
+      Crackling fire without alarm → map to NORMAL (important: model must not
+      alert on a fireplace or campfire video). Co-labeled Fire+Alarm → use
+      toward fire_alarm class instead.
+
+  # FSD50K — NORMAL sources
+  - dataset: FSD50K
+    original_label: Speech
+    echo_class: normal
+    confidence: HIGH
+    notes: "Excellent hard negative."
+
+  - dataset: FSD50K
+    original_label: Male_speech_and_man_speaking
+    echo_class: normal
+    confidence: HIGH
+    notes: "Excellent hard negative."
+
+  - dataset: FSD50K
+    original_label: Female_speech_and_woman_speaking
+    echo_class: normal
+    confidence: HIGH
+    notes: ""
+
+  - dataset: FSD50K
+    original_label: Conversation
+    echo_class: normal
+    confidence: HIGH
+    notes: ""
+
+  - dataset: FSD50K
+    original_label: Laughter
+    echo_class: normal
+    confidence: HIGH
+    notes: "High-energy vocal — important hard negative."
+
+  - dataset: FSD50K
+    original_label: Music
+    echo_class: normal
+    confidence: HIGH
+    notes: "Includes percussion — critical hard negative."
+
+  - dataset: FSD50K
+    original_label: Crowd
+    echo_class: normal
+    confidence: HIGH
+    notes: "Contains cheering/group shouts — critical hard negative for human_distress FPR."
+
+  - dataset: FSD50K
+    original_label: Applause
+    echo_class: normal
+    confidence: MEDIUM
+    notes: "Grouped impulsive sounds."
+
+  - dataset: FSD50K
+    original_label: Traffic_noise_and_roadway_noise
+    echo_class: normal
+    confidence: HIGH
+    notes: ""
+
+  - dataset: FSD50K
+    original_label: Dog
+    echo_class: normal
+    confidence: HIGH
+    notes: "Hard negative for impulsive sounds."
+
+  - dataset: FSD50K
+    original_label: Rain
+    echo_class: normal
+    confidence: HIGH
+    notes: ""
+
+  - dataset: FSD50K
+    original_label: Walk_and_footsteps
+    echo_class: normal
+    confidence: MEDIUM
+    notes: ""
+
+  - dataset: FSD50K
+    original_label: Typing
+    echo_class: normal
+    confidence: MEDIUM
+    notes: "Impulsive — hard negative."
+
+  # FSD50K — EXCLUDED labels
+  - dataset: FSD50K
+    original_label: Fireworks
+    echo_class: EXCLUDED
+    reason: ACOUSTIC_CONFUSION_WITH_GUNSHOT
+    notes: >
+      Do NOT train on these clips. If a clip has Fireworks as any co-label,
+      exclude the entire clip from training regardless of other labels.
+
+  - dataset: FSD50K
+    original_label: Shatter
+    echo_class: EXCLUDED
+    reason: GLASS_BREAKING_CLASS_EXCLUDED_BY_USER
+    notes: >
+      Glass_breaking excluded by user in Phase 3. Shatter clips may be kept
+      in normal IF the acoustic profile does not resemble gunshot — use
+      caution; safer to exclude entirely.
+
+  - dataset: FSD50K
+    original_label: Glass
+    echo_class: EXCLUDED
+    reason: GLASS_BREAKING_CLASS_EXCLUDED_BY_USER
+    notes: "See Shatter note above."
+
+  - dataset: FSD50K
+    original_label: Crying_and_sobbing
+    echo_class: EXCLUDED
+    reason: BABYCRY_EXCLUDED_BY_USER_PHASE3
+    notes: "Not mapped to human_distress. User excluded babycry."
+
+  # VOICe
+  - dataset: VOICe
+    original_label: gunshot
+    echo_class: gunshot
+    confidence: HIGH
+    extraction_method: >
+      Windowed extraction: for each event [t_start, t_end], extract a 2-second
+      window centered on the event midpoint. If event shorter than 2 s, center
+      and pad with surrounding audio (NOT zero-pad). If event longer than 2 s,
+      use first 2 s of event. Reject windows shorter than 0.5 s.
+    notes: >
+      ~4,235 events across 207 files. After filtering overlapping windows
+      and too-short events, expect ~3,200-3,500 clean clips.
+      RESPECT official file splits: train files → train pool only.
+
+  - dataset: VOICe
+    original_label: glassbreak
+    echo_class: EXCLUDED
+    reason: GLASS_BREAKING_CLASS_EXCLUDED_BY_USER
+    notes: >
+      Glass_breaking excluded by user in Phase 3. The ~4,444 glassbreak
+      events in VOICe are unused. They may be kept as a hard negative ONLY
+      if the acoustic spectral profile does not confuse with gunshot — this
+      requires empirical verification in Phase 17. For now, exclude entirely.
+
+  - dataset: VOICe
+    original_label: babycry
+    echo_class: EXCLUDED
+    reason: EXCLUDED_BY_USER_PHASE3
+    notes: "User excluded babycry from this version."
+
+# ---------------------------------------------------------------------------
+# Split configuration
+# ---------------------------------------------------------------------------
+split_config:
+  urbansound8k:
+    train_folds: [1, 2, 3, 4, 5, 6, 7, 8]
+    val_folds: [9]
+    test_folds: [10]
+    note: >
+      Folds are the official US8K cross-validation units. NEVER randomize
+      across fold boundaries. Fold 10 is untouched until final evaluation.
+
+  fsd50k:
+    train_pool: dev      # dev.csv — used for train + val splits
+    test_pool: eval      # eval.csv — UNTOUCHED until final evaluation
+    val_fraction_of_dev: 0.15
+    val_strategy: >
+      Stratified split of dev set by clip ID (not random audio content).
+      Ensure no Freesound clip appears in both train and val.
+
+  voice:
+    train_files: source/synthetic_source_training.txt    # 69 files
+    val_files: source/synthetic_source_validation.txt    # 69 files
+    test_files: source/synthetic_source_test.txt         # 69 files
+    note: >
+      File-level splits — ALL windows extracted from a file belong to the
+      same split. DO NOT mix windows from the same file across splits.
+
+# ---------------------------------------------------------------------------
+# Preprocessing configuration (canonical — identical for train and inference)
+# ---------------------------------------------------------------------------
+preprocessing:
+  sample_rate: 16000
+  channels: 1          # mono
+  n_mels: 64
+  n_fft: 1024
+  hop_length: 512      # 32 ms hop at 16 kHz → ~62 frames per 2s window
+  f_min: 20
+  f_max: 8000
+  window_size_seconds: 2.0
+  feature: log_mel_spectrogram   # plain 64-bin log-mel, NOT Sobel/Laplacian
+  normalisation: per_clip_mean_std
+
+  note: >
+    DO NOT use the existing 192-bin Sobel/Laplacian feature. Start with
+    plain 64-bin log-mel. The 192-bin approach is unvalidated and must be
+    evaluated as a separate experiment if justified.
