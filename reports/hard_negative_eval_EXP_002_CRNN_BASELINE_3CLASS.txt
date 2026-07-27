@@ -1,0 +1,28 @@
+HARD NEGATIVE EVALUATION REPORT — EXP_002_CRNN_BASELINE_3CLASS
+============================================================
+Total Tested:         4169
+Correctly NORMAL:     3339 (80.09%)
+Flagged UNCERTAIN:    204 (4.89%)
+FALSE ALARMS:         626 (15.02%)
+------------------------------------------------------------
+Misclassified Audio Sources (False Alarms):
+  [US8K] 102857-5-0-1.wav -> siren (prob=0.8504)
+  [US8K] 102857-5-0-10.wav -> siren (prob=0.8871)
+  [US8K] 102857-5-0-14.wav -> siren (prob=0.8764)
+  [US8K] 102857-5-0-15.wav -> siren (prob=0.8828)
+  [US8K] 102857-5-0-16.wav -> siren (prob=0.8569)
+  [US8K] 102857-5-0-17.wav -> siren (prob=0.8785)
+  [US8K] 102857-5-0-18.wav -> siren (prob=0.9133)
+  [US8K] 102857-5-0-2.wav -> siren (prob=0.8258)
+  [US8K] 102857-5-0-20.wav -> siren (prob=0.9231)
+  [US8K] 102857-5-0-21.wav -> siren (prob=0.8265)
+  [US8K] 102857-5-0-22.wav -> siren (prob=0.9305)
+  [US8K] 102857-5-0-25.wav -> siren (prob=0.9043)
+  [US8K] 102857-5-0-26.wav -> siren (prob=0.9339)
+  [US8K] 102857-5-0-27.wav -> siren (prob=0.9097)
+  [US8K] 102857-5-0-28.wav -> siren (prob=0.9032)
+  [US8K] 102857-5-0-29.wav -> siren (prob=0.9206)
+  [US8K] 102857-5-0-3.wav -> siren (prob=0.8772)
+  [US8K] 102857-5-0-30.wav -> siren (prob=0.9313)
+  [US8K] 102857-5-0-4.wav -> siren (prob=0.8664)
+  [US8K] 102857-5-0-5.wav -> siren (prob=0.9289)

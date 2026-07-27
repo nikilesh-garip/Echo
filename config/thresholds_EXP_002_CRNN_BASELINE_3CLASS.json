@@ -1,0 +1,18 @@
+{
+  "gunshot": {
+    "class_id": 1,
+    "threshold": 0.85,
+    "val_f1": 0.966,
+    "val_far": 0.0199,
+    "val_recall": 0.9491
+  },
+  "siren": {
+    "class_id": 2,
+    "threshold": 0.81,
+    "val_f1": 0.9202,
+    "val_far": 0.0085,
+    "val_recall": 0.9146
+  },
+  "uncertain_margin": 0.15,
+  "normal_threshold": 0.5
+}
