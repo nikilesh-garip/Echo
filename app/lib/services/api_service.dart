@@ -48,6 +48,8 @@ class ApiService {
     required double verificationConf,
     required int riskScore,
     required String riskLevel,
+    double? latitude,
+    double? longitude,
   }) async {
     try {
       final uri = Uri.parse('$baseUrl/events');
@@ -61,6 +63,8 @@ class ApiService {
           'verification_conf': verificationConf,
           'risk_score': riskScore,
           'risk_level': riskLevel,
+          'latitude': latitude ?? 0.0,
+          'longitude': longitude ?? 0.0,
         }),
       );
       return response.statusCode == 200;

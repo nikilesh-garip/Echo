@@ -39,9 +39,21 @@ def init_db():
                 primary_conf REAL NOT NULL,
                 verification_conf REAL NOT NULL,
                 risk_score INTEGER NOT NULL,
-                risk_level TEXT NOT NULL
+                risk_level TEXT NOT NULL,
+                latitude REAL DEFAULT 0.0,
+                longitude REAL DEFAULT 0.0
             )
         """)
+        # Migration: Add latitude and longitude to events if they do not exist
+        try:
+            cursor.execute("ALTER TABLE events ADD COLUMN latitude REAL DEFAULT 0.0")
+        except sqlite3.OperationalError:
+            pass # already exists
+        try:
+            cursor.execute("ALTER TABLE events ADD COLUMN longitude REAL DEFAULT 0.0")
+        except sqlite3.OperationalError:
+            pass # already exists
+            
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS contacts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,6 +91,8 @@ class EventCreate(BaseModel):
     verification_conf: float
     risk_score: int
     risk_level: str
+    latitude: Optional[float] = 0.0
+    longitude: Optional[float] = 0.0
 
 class EventResponse(BaseModel):
     id: int
@@ -89,6 +103,8 @@ class EventResponse(BaseModel):
     verification_conf: float
     risk_score: int
     risk_level: str
+    latitude: Optional[float] = 0.0
+    longitude: Optional[float] = 0.0
 
 class ContactCreate(BaseModel):
     user_id: str
@@ -221,8 +237,8 @@ def log_event(event: EventCreate):
         cursor = conn.cursor()
         timestamp = time.time()
         cursor.execute(
-            "INSERT INTO events (user_id, timestamp, class_name, primary_conf, verification_conf, risk_score, risk_level) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (event.user_id, timestamp, event.class_name, event.primary_conf, event.verification_conf, event.risk_score, event.risk_level)
+            "INSERT INTO events (user_id, timestamp, class_name, primary_conf, verification_conf, risk_score, risk_level, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (event.user_id, timestamp, event.class_name, event.primary_conf, event.verification_conf, event.risk_score, event.risk_level, event.latitude, event.longitude)
         )
         event_id = cursor.lastrowid
         conn.commit()
@@ -235,7 +251,9 @@ def log_event(event: EventCreate):
         "primary_conf": event.primary_conf,
         "verification_conf": event.verification_conf,
         "risk_score": event.risk_score,
-        "risk_level": event.risk_level
+        "risk_level": event.risk_level,
+        "latitude": event.latitude,
+        "longitude": event.longitude
     }
 
 @app.get("/events/{user_id}", response_model=List[EventResponse])
@@ -305,8 +323,8 @@ def get_nearby_places(
         
     overpass_query = f"""
     [out:json];
-    node["{osm_node_type}"="{osm_val}"](around:5000, {lat}, {lng});
-    out body;
+    nwr["{osm_node_type}"="{osm_val}"](around:5000, {lat}, {lng});
+    out center;
     """
     overpass_url = "https://overpass-api.de/api/interpreter"
     try:
@@ -316,12 +334,15 @@ def get_nearby_places(
         places = []
         for element in data.get("elements", []):
             tags = element.get("tags", {})
-            places.append({
-                "name": tags.get("name", f"Unnamed {place_type.capitalize()}"),
-                "latitude": element.get("lat"),
-                "longitude": element.get("lon"),
-                "address": tags.get("addr:street", "Street address unavailable")
-            })
+            el_lat = element.get("lat") or (element.get("center", {}).get("lat") if element.get("center") else None)
+            el_lon = element.get("lon") or (element.get("center", {}).get("lon") if element.get("center") else None)
+            if el_lat is not None and el_lon is not None:
+                places.append({
+                    "name": tags.get("name", tags.get("official_name", f"Unnamed {place_type.capitalize()}")),
+                    "latitude": el_lat,
+                    "longitude": el_lon,
+                    "address": tags.get("addr:street", tags.get("addr:place", "Street address unavailable"))
+                })
         return {"status": "success", "results": places[:10]}
     except Exception as e:
         return {

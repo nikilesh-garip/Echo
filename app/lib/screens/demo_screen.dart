@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import '../services/api_service.dart';
 import 'alert_screen.dart';
 
 class DemoScreen extends StatelessWidget {
-  const DemoScreen({super.key});
+  DemoScreen({super.key});
+
+  final ApiService _apiService = ApiService(baseUrl: 'http://10.0.2.2:8000');
 
   final List<String> _demoClasses = const [
     "gunshot", "scream", "glass_breaking", "explosion", "fire_alarm", "siren", "shouting", "normal"
   ];
 
-  void _triggerSimulatedAlert(BuildContext context, String soundClass) {
+  Future<void> _triggerSimulatedAlert(BuildContext context, String soundClass) async {
     // Look up guidance rules offline static mapping
     final guidanceMap = {
       "gunshot": {
@@ -40,24 +44,101 @@ class DemoScreen extends StatelessWidget {
       "level": "SUSPICIOUS"
     };
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => AlertScreen(
-          title: selected['title'] as String,
-          threatClass: soundClass,
-          riskScore: selected['risk'] as int,
-          riskLevel: selected['level'] as String,
-          p1Conf: 0.95,
-          p2Conf: 0.88,
-          instructions: List<String>.from(selected['instructions'] as Iterable),
-          nearbyFacilities: const [
-            {"name": "General District Police Station", "address": "456 Safety Blvd"},
-            {"name": "City Medical Center Emergency", "address": "123 Civic Center Way"}
-          ],
+    double lat = 37.7749; // Default San Francisco coordinates
+    double lng = -122.4194;
+
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (serviceEnabled) {
+        LocationPermission permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          permission = await Geolocator.requestPermission();
+        }
+        if (permission == LocationPermission.whileInUse || permission == LocationPermission.always) {
+          // Try getting last known position first (instant lookup)
+          Position? lastPosition = await Geolocator.getLastKnownPosition();
+          if (lastPosition != null) {
+            lat = lastPosition.latitude;
+            lng = lastPosition.longitude;
+          }
+          
+          // Get current position with balanced accuracy (faster lock indoors) and reasonable timeout
+          try {
+            Position position = await Geolocator.getCurrentPosition(
+              desiredAccuracy: LocationAccuracy.balanced,
+              timeLimit: const Duration(seconds: 8),
+            );
+            lat = position.latitude;
+            lng = position.longitude;
+          } catch (timeoutErr) {
+            print('Geolocator getCurrentPosition failed/timed out in Demo: $timeoutErr');
+          }
+        }
+      }
+    } catch (e) {
+      print('Error getting GPS location in Demo Screen: $e');
+    }
+
+    // Fetch dynamic nearby places from backend OpenStreetMap proxy
+    String placeType = (soundClass == "fire_alarm")
+        ? "fire"
+        : (soundClass == "gunshot" || soundClass == "glass_breaking" || soundClass == "shouting")
+            ? "police"
+            : "hospital";
+
+    List<Map<String, dynamic>> nearbyFacilities = [];
+    try {
+      final places = await _apiService.getNearbyPlaces(lat: lat, lng: lng, type: placeType);
+      if (places != null) {
+        nearbyFacilities = places;
+      }
+    } catch (e) {
+      print('Error fetching nearby places in Demo: $e');
+    }
+
+    if (nearbyFacilities.isEmpty) {
+      nearbyFacilities = [
+        {"name": "Local Emergency Dispatch (GPS Fallback)", "address": "Latitude: ${lat.toStringAsFixed(4)}, Longitude: ${lng.toStringAsFixed(4)}"}
+      ];
+    }
+
+    // Retrieve contacts to simulate live location message sharing
+    List<String> notifiedContacts = [];
+    try {
+      final contacts = await _apiService.getContacts("echo_mobile_client");
+      if (contacts != null && contacts.isNotEmpty) {
+        for (var contact in contacts) {
+          final contactName = contact['name'] ?? 'Trusted Contact';
+          final contactPhone = contact['phone'] ?? '';
+          final contactRelation = contact['relation'] ?? 'Friend';
+          notifiedContacts.add('$contactName ($contactRelation)');
+          print('EMERGENCY SHARING (Demo): Live location link (https://maps.google.com/?q=$lat,$lng) dispatched immediately via SMS to $contactName ($contactPhone)');
+        }
+      }
+    } catch (e) {
+      print('Error fetching contacts in Demo: $e');
+    }
+
+    if (context.mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => AlertScreen(
+            title: selected['title'] as String,
+            threatClass: soundClass,
+            riskScore: selected['risk'] as int,
+            riskLevel: selected['level'] as String,
+            p1Conf: 0.95,
+            p2Conf: 0.88,
+            instructions: List<String>.from(selected['instructions'] as Iterable),
+            nearbyFacilities: nearbyFacilities,
+            latitude: lat,
+            longitude: lng,
+            notifiedContacts: notifiedContacts,
+          ),
         ),
-      ),
-    );
+      );
+    }
   }
 
   @override

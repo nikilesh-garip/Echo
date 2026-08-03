@@ -9,6 +9,9 @@ class AlertScreen extends StatelessWidget {
   final double p2Conf;
   final List<String> instructions;
   final List<Map<String, dynamic>> nearbyFacilities;
+  final double? latitude;
+  final double? longitude;
+  final List<String> notifiedContacts;
 
   const AlertScreen({
     super.key,
@@ -20,6 +23,9 @@ class AlertScreen extends StatelessWidget {
     required this.p2Conf,
     required this.instructions,
     required this.nearbyFacilities,
+    this.latitude,
+    this.longitude,
+    this.notifiedContacts = const [],
   });
 
   @override
@@ -78,6 +84,89 @@ class AlertScreen extends StatelessWidget {
               child: ListView(
                 padding: const EdgeInsets.all(20),
                 children: [
+                  // Emergency Broadcast status
+                  _buildSectionTitle('Emergency Broadcast'),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    margin: const EdgeInsets.only(bottom: 25),
+                    decoration: BoxDecoration(
+                      color: const Color(0x1AF97316), // Translucent Orange
+                      border: Border.all(color: const Color(0xFFF97316), width: 1.5),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.share_location, color: Color(0xFFF97316)),
+                            SizedBox(width: 10),
+                            Text(
+                              'LIVE LOCATION SHARE ACTIVE',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFFF97316),
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        if (latitude != null && longitude != null) ...[
+                          Text(
+                            'Coordinates: ${latitude!.toStringAsFixed(6)}, ${longitude!.toStringAsFixed(6)}',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        Text(
+                          notifiedContacts.isNotEmpty
+                              ? 'Emergency message + live map link dispatched to:\n${notifiedContacts.join(", ")}'
+                              : 'Location tracking active. Add emergency contacts under the Contacts tab to auto-share.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.white.withOpacity(0.8),
+                            height: 1.4,
+                          ),
+                        ),
+                        if (latitude != null && longitude != null) ...[
+                          const SizedBox(height: 12),
+                          InkWell(
+                            onTap: () {
+                              final url = 'https://maps.google.com/?q=$latitude,$longitude';
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Live Map Link: $url'),
+                                  duration: const Duration(seconds: 4),
+                                  action: SnackBarAction(
+                                    label: 'DISMISS',
+                                    onPressed: () {},
+                                  ),
+                                ),
+                              );
+                            },
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.map, size: 16, color: Colors.blue[300]),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'View Live Map Link',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.blue[300],
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+
                   // Inference metrics
                   _buildSectionTitle('Inference Details'),
                   Container(

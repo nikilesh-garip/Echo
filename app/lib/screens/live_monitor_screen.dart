@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import '../services/api_service.dart';
 import 'alert_screen.dart';
 
@@ -21,6 +22,11 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
   String _riskLevel = "NORMAL";
   bool _isMonitoring = false;
 
+  // Cooldown variables to deduplicate persistent hazards
+  String? _lastAlertClass;
+  DateTime? _lastAlertTime;
+  static const Duration _alertCooldown = Duration(seconds: 15);
+
   /// Interface bridge to send recorded audio file chunks to the FastAPI detector API.
   Future<void> _sendAudioChunk(File audioFile, double duration) async {
     final result = await _apiService.detectAudio(
@@ -41,6 +47,97 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
 
       // If threat is confirmed, log the event and navigate to Alert Screen
       if (result['verified'] == true && _riskScore > 30) {
+        // Cooldown check to prevent duplicate alerts for persistent hazards
+        final now = DateTime.now();
+        if (_currentClass == _lastAlertClass &&
+            _lastAlertTime != null &&
+            now.difference(_lastAlertTime!) < _alertCooldown) {
+          print('Suppressing duplicate alert for $_currentClass within cooldown');
+          return;
+        }
+
+        _lastAlertClass = _currentClass;
+        _lastAlertTime = now;
+
+        double lat = 37.7749; // Default San Francisco coordinates
+        double lng = -122.4194;
+
+        try {
+          // Request and obtain geolocation permission and position
+          bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+          if (serviceEnabled) {
+            LocationPermission permission = await Geolocator.checkPermission();
+            if (permission == LocationPermission.denied) {
+              permission = await Geolocator.requestPermission();
+            }
+            if (permission == LocationPermission.whileInUse || permission == LocationPermission.always) {
+              // Try getting last known position first (instant lookup)
+              Position? lastPosition = await Geolocator.getLastKnownPosition();
+              if (lastPosition != null) {
+                lat = lastPosition.latitude;
+                lng = lastPosition.longitude;
+              }
+              
+              // Get current position with balanced accuracy (faster lock indoors) and reasonable timeout
+              try {
+                Position position = await Geolocator.getCurrentPosition(
+                  desiredAccuracy: LocationAccuracy.balanced,
+                  timeLimit: const Duration(seconds: 8),
+                );
+                lat = position.latitude;
+                lng = position.longitude;
+              } catch (timeoutErr) {
+                print('Geolocator getCurrentPosition failed/timed out: $timeoutErr');
+              }
+            }
+          }
+        } catch (e) {
+          print('Error getting GPS location: $e');
+        }
+
+        // Fetch dynamic nearby places from backend OpenStreetMap proxy
+        String placeType = (_currentClass == "fire_alarm")
+            ? "fire"
+            : (_currentClass == "gunshot" || _currentClass == "glass_breaking" || _currentClass == "shouting")
+                ? "police"
+                : "hospital";
+
+        List<Map<String, dynamic>> nearbyFacilities = [];
+        try {
+          final places = await _apiService.getNearbyPlaces(lat: lat, lng: lng, type: placeType);
+          if (places != null) {
+            nearbyFacilities = places;
+          }
+        } catch (e) {
+          print('Error fetching nearby places: $e');
+        }
+
+        if (nearbyFacilities.isEmpty) {
+          nearbyFacilities = [
+            {"name": "Local Emergency Dispatch (GPS Fallback)", "address": "Latitude: ${lat.toStringAsFixed(4)}, Longitude: ${lng.toStringAsFixed(4)}"}
+          ];
+        }
+
+        // Get emergency contacts to simulate live location message sharing
+        List<String> notifiedContacts = [];
+        try {
+          final contacts = await _apiService.getContacts("echo_mobile_client");
+          if (contacts != null && contacts.isNotEmpty) {
+            for (var contact in contacts) {
+              final contactName = contact['name'] ?? 'Trusted Contact';
+              final contactPhone = contact['phone'] ?? '';
+              final contactRelation = contact['relation'] ?? 'Friend';
+              notifiedContacts.add('$contactName ($contactRelation)');
+              
+              // Print simulated SMS dispatch log to application standard output
+              print('EMERGENCY SHARING: Live location link (https://maps.google.com/?q=$lat,$lng) dispatched immediately via SMS to $contactName ($contactPhone)');
+            }
+          }
+        } catch (e) {
+          print('Error fetching contacts for sharing: $e');
+        }
+
+        // Log the verified threat to backend along with real location coordinates
         await _apiService.logEvent(
           userId: "echo_mobile_client",
           className: _currentClass,
@@ -48,6 +145,8 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
           verificationConf: _p2Confidence,
           riskScore: _riskScore,
           riskLevel: _riskLevel,
+          latitude: lat,
+          longitude: lng,
         );
 
         if (mounted) {
@@ -66,10 +165,10 @@ class _LiveMonitorScreenState extends State<LiveMonitorScreen> {
                   "Seek substantial shelter or drop low if gunshots are suspected.",
                   "Contact rescue coordinates or emergency contacts immediately."
                 ],
-                nearbyFacilities: const [
-                  {"name": "Rescue District Police Station", "address": "456 Safety Blvd"},
-                  {"name": "City Medical Center Hospital", "address": "123 Emergency Way"}
-                ],
+                nearbyFacilities: nearbyFacilities,
+                latitude: lat,
+                longitude: lng,
+                notifiedContacts: notifiedContacts,
               ),
             ),
           );

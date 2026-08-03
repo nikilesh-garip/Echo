@@ -50,7 +50,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     const LiveMonitorScreen(),
     const HistoryScreen(),
     const ContactsScreen(),
-    const DemoScreen(),
+    DemoScreen(),
   ];
 
   @override

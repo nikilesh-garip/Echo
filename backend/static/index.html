@@ -148,15 +148,38 @@
                                 </div>
                                 
                                 <div class="settings-group">
-                                    <h3>Permissions & Privacy</h3>
+                                    <h3>Permissions &amp; Privacy</h3>
                                     <div class="toggle-row">
                                         <span>Microphone Permission Granted</span>
                                         <span class="status-dot green"></span>
                                     </div>
                                     <div class="toggle-row">
-                                        <span>Location Services Active</span>
-                                        <span class="status-dot green"></span>
+                                        <span id="loc-permission-label">Location Services Active</span>
+                                        <span class="status-dot" id="loc-permission-dot"></span>
                                     </div>
+                                </div>
+
+                                <!-- Location Card -->
+                                <div class="settings-group">
+                                    <h3>📍 Live Location</h3>
+                                    <div class="location-status-row">
+                                        <span class="location-status-icon acquiring" id="loc-status-icon"></span>
+                                        <span id="loc-status-text">Acquiring location…</span>
+                                    </div>
+
+                                    <div class="location-coords-display" id="loc-coords-display">
+                                        <span class="coord-label">Coordinates</span>
+                                        <span id="loc-lat-display">Lat: —</span>
+                                        <span id="loc-lng-display">Lng: —</span>
+                                        <span id="loc-acc-display" style="color: var(--gray-sub); font-size: 0.72rem;">Accuracy: —</span>
+                                        <span id="loc-ts-display" style="color: var(--gray-sub); font-size: 0.68rem; font-family: 'Outfit', sans-serif; font-weight: 600;">Last updated: —</span>
+                                        <span class="accuracy-badge unknown" id="loc-accuracy-badge">— Accuracy</span>
+                                    </div>
+
+                                    <button class="maps-btn" id="open-maps-btn" disabled>
+                                        <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="currentColor"/></svg>
+                                        Open Location in Maps
+                                    </button>
                                 </div>
 
                                 <div class="settings-group">

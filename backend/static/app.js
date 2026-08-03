@@ -41,6 +41,262 @@ const contactRelationInput = document.getElementById('contact-relation');
 const historyContainer = document.getElementById('history-items-container');
 const clearHistoryBtn = document.getElementById('clear-history-btn');
 
+// Cooldown tracking for continuous sound alerts
+let lastAlertClass = null;
+let lastAlertTime = 0;
+const ALERT_COOLDOWN_MS = 15000; // 15 seconds cooldown for the same class
+
+function shouldTriggerAlert(candidate, riskScore) {
+    if (riskScore <= 30) return false;
+    
+    // Check if alert modal is currently visible
+    const isAlertOpen = alertModal.classList.contains('show');
+    if (isAlertOpen) {
+        console.log(`Suppressing alert: alert modal is already open`);
+        return false;
+    }
+    
+    // Check cooldown for the same class
+    const now = Date.now();
+    if (candidate === lastAlertClass && (now - lastAlertTime < ALERT_COOLDOWN_MS)) {
+        console.log(`Suppressing alert: same class ${candidate} detected within cooldown`);
+        return false;
+    }
+    
+    // Update tracking
+    lastAlertClass = candidate;
+    lastAlertTime = now;
+    return true;
+}
+
+// =============================================================================
+// LOCATION SERVICE — Browser Geolocation API (watchPosition, high accuracy)
+// =============================================================================
+const LocationService = (() => {
+    // Internal state
+    const state = {
+        latitude:  null,
+        longitude: null,
+        accuracy:  null,   // metres
+        timestamp: null,   // Unix ms
+        mapsUrl:   null,
+        watchId:   null,
+        status:    'idle', // idle | acquiring | active | error
+        errorCode: null    // 1=PERMISSION_DENIED 2=UNAVAILABLE 3=TIMEOUT
+    };
+
+    // DOM refs — resolved lazily (elements exist after DOMContentLoaded)
+    const el = () => ({
+        statusIcon:    document.getElementById('loc-status-icon'),
+        statusText:    document.getElementById('loc-status-text'),
+        latDisplay:    document.getElementById('loc-lat-display'),
+        lngDisplay:    document.getElementById('loc-lng-display'),
+        accDisplay:    document.getElementById('loc-acc-display'),
+        tsDisplay:     document.getElementById('loc-ts-display'),
+        badge:         document.getElementById('loc-accuracy-badge'),
+        mapsBtn:       document.getElementById('open-maps-btn'),
+        permDot:       document.getElementById('loc-permission-dot'),
+        permLabel:     document.getElementById('loc-permission-label')
+    });
+
+    // Build Google Maps search URL from coordinates (no API key required)
+    function buildMapsUrl(lat, lng) {
+        return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+    }
+
+    // Classify accuracy into a human-readable tier
+    function accuracyTier(metres) {
+        if (metres === null) return { cls: 'unknown', label: '— Accuracy' };
+        if (metres <= 50)    return { cls: 'good',    label: `±${Math.round(metres)} m — Good` };
+        if (metres <= 500)   return { cls: 'fair',    label: `±${Math.round(metres)} m — Fair` };
+        return                      { cls: 'poor',    label: `±${Math.round(metres)} m — Poor` };
+    }
+
+    // Update all Settings-screen location UI elements
+    function updateUI() {
+        const d = el();
+        if (!d.statusIcon) return; // DOM not ready yet
+
+        if (state.status === 'acquiring') {
+            d.statusIcon.className = 'location-status-icon acquiring';
+            d.statusText.textContent = 'Acquiring location…';
+            d.permDot.className = 'status-dot yellow';
+            d.mapsBtn.disabled = true;
+            return;
+        }
+
+        if (state.status === 'active') {
+            const tier = accuracyTier(state.accuracy);
+
+            d.statusIcon.className = `location-status-icon ${tier.cls === 'poor' ? 'yellow' : 'green'}`;
+            d.statusText.textContent = 'Location active — tracking in real time';
+            d.permDot.className = 'status-dot green';
+
+            d.latDisplay.textContent  = `Lat:  ${state.latitude.toFixed(6)}`;
+            d.lngDisplay.textContent  = `Lng:  ${state.longitude.toFixed(6)}`;
+            d.accDisplay.textContent  = `Accuracy: ±${Math.round(state.accuracy)} m`;
+
+            const ts = new Date(state.timestamp);
+            d.tsDisplay.textContent = `Last updated: ${ts.toLocaleTimeString()}`;
+
+            d.badge.className = `accuracy-badge ${tier.cls}`;
+            d.badge.textContent = tier.label;
+
+            // Enable Maps button and bind click
+            d.mapsBtn.disabled = false;
+            return;
+        }
+
+        if (state.status === 'error') {
+            let msg, dotCls;
+            switch (state.errorCode) {
+                case 1:
+                    msg    = 'Permission denied — enable location in browser settings';
+                    dotCls = 'red';
+                    break;
+                case 2:
+                    msg    = 'Location unavailable — check device GPS / network';
+                    dotCls = 'orange';
+                    break;
+                case 3:
+                    msg    = 'Location timed out — retrying…';
+                    dotCls = 'orange';
+                    break;
+                default:
+                    msg    = 'Location error — geolocation not supported';
+                    dotCls = 'red';
+            }
+            d.statusIcon.className = `location-status-icon ${dotCls}`;
+            d.statusText.textContent = msg;
+            d.permDot.className = `status-dot ${dotCls}`;
+            d.badge.className = 'accuracy-badge unknown';
+            d.badge.textContent = '— Accuracy';
+            d.mapsBtn.disabled = true;
+        }
+    }
+
+    // watchPosition success callback
+    function onPosition(pos) {
+        state.latitude  = pos.coords.latitude;
+        state.longitude = pos.coords.longitude;
+        state.accuracy  = pos.coords.accuracy;
+        state.timestamp = pos.timestamp;
+        state.mapsUrl   = buildMapsUrl(state.latitude, state.longitude);
+        state.status    = 'active';
+        state.errorCode = null;
+        console.log(
+            `[LocationService] Updated: ${state.latitude.toFixed(6)}, ` +
+            `${state.longitude.toFixed(6)} ±${Math.round(state.accuracy)}m`
+        );
+        updateUI();
+    }
+
+    // watchPosition error callback
+    function onError(err) {
+        state.status    = 'error';
+        state.errorCode = err.code;
+        console.warn('[LocationService] Error:', err.message, '(code', err.code + ')');
+        updateUI();
+    }
+
+    // Public API
+    return {
+        init() {
+            if (!navigator.geolocation) {
+                state.status    = 'error';
+                state.errorCode = 0; // unsupported
+                console.warn('[LocationService] Geolocation not supported by this browser.');
+                updateUI();
+                return;
+            }
+            if (state.watchId !== null) return; // already watching
+
+            state.status = 'acquiring';
+            updateUI();
+
+            state.watchId = navigator.geolocation.watchPosition(
+                onPosition,
+                onError,
+                {
+                    enableHighAccuracy: true,
+                    timeout:           10000,
+                    maximumAge:        0
+                }
+            );
+            console.log('[LocationService] watchPosition started, id:', state.watchId);
+
+            // Wire the "Open in Maps" button (once)
+            const btn = document.getElementById('open-maps-btn');
+            if (btn) {
+                btn.addEventListener('click', () => {
+                    if (!state.mapsUrl) return;
+                    // Opens in new tab on desktop; mobile browsers hand-off to Maps app
+                    window.open(state.mapsUrl, '_blank', 'noopener,noreferrer');
+                });
+            }
+        },
+
+        stop() {
+            if (state.watchId !== null) {
+                navigator.geolocation.clearWatch(state.watchId);
+                state.watchId = null;
+                console.log('[LocationService] watchPosition cleared.');
+            }
+        },
+
+        // Returns current cached coords or null if not yet available
+        getCoords() {
+            if (state.latitude === null) return null;
+            return {
+                latitude:  state.latitude,
+                longitude: state.longitude,
+                accuracy:  state.accuracy,
+                timestamp: state.timestamp,
+                mapsUrl:   state.mapsUrl
+            };
+        },
+
+        // Async helper kept for backward-compat with older call sites.
+        // Returns cached coords immediately if available, otherwise waits
+        // up to 10 s for the first watchPosition fix.
+        getDeviceLocation() {
+            const cached = this.getCoords();
+            if (cached) return Promise.resolve(cached);
+
+            // Not yet resolved — fall back to one-shot getCurrentPosition
+            return new Promise((resolve) => {
+                if (!navigator.geolocation) {
+                    resolve({ latitude: 0, longitude: 0 });
+                    return;
+                }
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => resolve({
+                        latitude:  pos.coords.latitude,
+                        longitude: pos.coords.longitude,
+                        accuracy:  pos.coords.accuracy,
+                        timestamp: pos.timestamp,
+                        mapsUrl:   buildMapsUrl(pos.coords.latitude, pos.coords.longitude)
+                    }),
+                    () => resolve({ latitude: 0, longitude: 0 }),
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                );
+            });
+        },
+
+        get mapsUrl()   { return state.mapsUrl; },
+        get latitude()  { return state.latitude; },
+        get longitude() { return state.longitude; }
+    };
+})();
+
+// Backward-compat shim — called by runPipelinePass1/2 and demo mode
+async function getDeviceLocation() {
+    return LocationService.getDeviceLocation();
+}
+
+// Auto-init on page load so coords are ready before the first alert fires
+LocationService.init();
+
 // Load configurations
 fetch('guidance_rules.json')
     .then(res => res.json())
@@ -154,7 +410,7 @@ function setupVisualizer() {
         animationFrameId = requestAnimationFrame(draw);
         
         analyser.getByteFrequencyData(dataArray);
-        canvasCtx.fillStyle = '#020617';
+        canvasCtx.fillStyle = '#ffffff';
         canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
         
         const barWidth = (canvas.width / bufferLength) * 1.5;
@@ -163,7 +419,7 @@ function setupVisualizer() {
         
         for (let i = 0; i < bufferLength; i++) {
             barHeight = dataArray[i] / 2;
-            canvasCtx.fillStyle = `rgb(13, ${148 + barHeight}, ${136 - barHeight})`;
+            canvasCtx.fillStyle = `rgb(255, ${216 - (barHeight * 0.4)}, 3)`;
             canvasCtx.fillRect(x, canvas.height - barHeight, barWidth - 2, barHeight);
             x += barWidth;
         }
@@ -231,7 +487,11 @@ async function runPipelinePass1() {
                         data.risk_level
                     );
                     
-                    if (data.verified && data.risk_score > 30) {
+                    if (data.verified && shouldTriggerAlert(data.candidate, data.risk_score)) {
+                        const loc = await getDeviceLocation();
+                        data.latitude = loc.latitude;
+                        data.longitude = loc.longitude;
+
                         // Log verified hazard to backend immediately
                         await fetch("/events", {
                             method: "POST",
@@ -242,7 +502,9 @@ async function runPipelinePass1() {
                                 primary_conf: data.primary_confidence,
                                 verification_conf: data.verification_confidence,
                                 risk_score: data.risk_score,
-                                risk_level: data.risk_level
+                                risk_level: data.risk_level,
+                                latitude: loc.latitude,
+                                longitude: loc.longitude
                             })
                         });
                         triggerAlertModal(data);
@@ -307,7 +569,11 @@ async function runPipelinePass2(candidate, p1Conf) {
                 data.risk_level
             );
             
-            if (data.verified && data.risk_score > 30) {
+            if (data.verified && shouldTriggerAlert(data.candidate, data.risk_score)) {
+                const loc = await getDeviceLocation();
+                data.latitude = loc.latitude;
+                data.longitude = loc.longitude;
+
                 // Log verified hazard to backend
                 await fetch("/events", {
                     method: "POST",
@@ -318,7 +584,9 @@ async function runPipelinePass2(candidate, p1Conf) {
                         primary_conf: data.primary_confidence,
                         verification_conf: data.verification_confidence,
                         risk_score: data.risk_score,
-                        risk_level: data.risk_level
+                        risk_level: data.risk_level,
+                        latitude: loc.latitude,
+                        longitude: loc.longitude
                     })
                 });
                 
@@ -416,10 +684,41 @@ async function triggerAlertModal(data) {
     // Query maps proxy nearby emergency services
     alertPlacesContainer.innerHTML = "<div class='place-card'>Fetching nearby emergency facilities...</div>";
     
-    // San Francisco coords default, tries to get real geolocation
-    let lat = 37.7749;
-    let lng = -122.4194;
+    // Default coordinates (San Francisco)
+    let lat = data.latitude || 37.7749;
+    let lng = data.longitude || -122.4194;
     
+    // Add broadcast status
+    let broadcastDiv = document.getElementById("alert-broadcast-status");
+    if (!broadcastDiv) {
+        broadcastDiv = document.createElement("div");
+        broadcastDiv.id = "alert-broadcast-status";
+        broadcastDiv.style.backgroundColor = "rgba(249, 115, 22, 0.1)";
+        broadcastDiv.style.border = "1px solid #f97316";
+        broadcastDiv.style.borderRadius = "8px";
+        broadcastDiv.style.padding = "10px";
+        broadcastDiv.style.marginTop = "10px";
+        broadcastDiv.style.color = "#f97316";
+        broadcastDiv.style.fontSize = "12px";
+        broadcastDiv.style.fontWeight = "bold";
+        const alertBody = document.querySelector(".alert-body");
+        alertBody.insertBefore(broadcastDiv, alertBody.firstChild);
+    }
+
+    // Prefer the high-accuracy Maps URL from LocationService; fall back to basic coords
+    const mapLink = LocationService.mapsUrl || `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+    fetch(`/contacts/${userId}`)
+        .then(res => res.json())
+        .then(contacts => {
+            if (contacts && contacts.length > 0) {
+                const names = contacts.map(c => `${c.name} (${c.relation})`).join(", ");
+                broadcastDiv.innerHTML = `🔴 LIVE LOCATION SHARED IMMEDIATELY<br><span style="font-weight: normal; color: #cbd5e1;">SMS alert dispatched to: <strong>${names}</strong> with live map link: <a href="${mapLink}" target="_blank" style="color: #38bdf8; text-decoration: underline;">Open Google Maps</a></span>`;
+                console.log(`EMERGENCY SHARING: Live location link (${mapLink}) shared with: ${names}`);
+            } else {
+                broadcastDiv.innerHTML = `🔴 LIVE LOCATION ACTIVE<br><span style="font-weight: normal; color: #cbd5e1;">Live coordinates: <strong>${lat.toFixed(4)}, ${lng.toFixed(4)}</strong> (Add emergency contacts under the Contacts tab to auto-share).</span>`;
+            }
+        });
+
     const getPlaces = (latitude, longitude) => {
         const type = (data.candidate === "fire_alarm") ? "fire" : (data.candidate === "gunshot" || data.candidate === "glass_breaking" || data.candidate === "shouting") ? "police" : "hospital";
         fetch(`/nearby?lat=${latitude}&lng=${longitude}&type=${type}`)
@@ -445,15 +744,8 @@ async function triggerAlertModal(data) {
             });
     };
     
-    if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition((pos) => {
-            getPlaces(pos.coords.latitude, pos.coords.longitude);
-        }, () => {
-            getPlaces(lat, lng);
-        });
-    } else {
-        getPlaces(lat, lng);
-    }
+    // Call places lookup
+    getPlaces(lat, lng);
     
     alertModal.classList.add('show');
 }
@@ -476,12 +768,25 @@ function loadHistory() {
                 const date = new Date(item.timestamp * 1000).toLocaleString();
                 const card = document.createElement('div');
                 card.className = `history-card ${item.risk_level === 'HIGH_RISK' ? 'critical' : item.risk_level === 'POSSIBLE_DANGER' ? 'suspicious' : ''}`;
+                
+                let locationHtml = "";
+                if (item.latitude !== undefined && item.latitude !== null && item.longitude !== undefined && item.longitude !== null && (item.latitude !== 0.0 || item.longitude !== 0.0)) {
+                    locationHtml = `
+                        <div style="margin-top: 6px; font-size: 11px;">
+                            📍 <a href="https://maps.google.com/?q=${item.latitude},${item.longitude}" target="_blank" style="color: #0d9488; text-decoration: underline; font-weight: 500;">
+                                Shared Location: ${item.latitude.toFixed(4)}, ${item.longitude.toFixed(4)}
+                            </a>
+                        </div>
+                    `;
+                }
+                
                 card.innerHTML = `
                     <div class="meta">
                         <strong>${item.class_name.toUpperCase()}</strong>
                         <span class="time-stamp">${date}</span>
                     </div>
                     <div>Risk: ${item.risk_score}</div>
+                    ${locationHtml}
                 `;
                 historyContainer.appendChild(card);
             });
@@ -597,6 +902,10 @@ demoWavButtons.forEach(btn => {
             );
             
             if (data.verified && data.risk_score > 30) {
+                const loc = await getDeviceLocation();
+                data.latitude = loc.latitude;
+                data.longitude = loc.longitude;
+
                 // Log verified hazard to backend
                 await fetch("/events", {
                     method: "POST",
@@ -607,7 +916,9 @@ demoWavButtons.forEach(btn => {
                         primary_conf: data.primary_confidence,
                         verification_conf: data.verification_confidence,
                         risk_score: data.risk_score,
-                        risk_level: data.risk_level
+                        risk_level: data.risk_level,
+                        latitude: loc.latitude,
+                        longitude: loc.longitude
                     })
                 });
                 
